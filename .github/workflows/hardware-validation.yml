@@ -1,0 +1,17 @@
+name: 验证 Halo GPIO 映射
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  validate-hardware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 校验六键引脚数据及固件头文件
+        run: python tools/check_pins.py
+      - name: 输出说明
+        run: echo '本工作流只验证硬件映射，不编译或发布 HEX/BIN。'
