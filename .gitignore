@@ -1,0 +1,9 @@
+# Do not publish factory flash dumps or personalized keys
+*.bin
+*.hex
+*.ota
+*original*dump*
+*backup*flash*
+.pio/
+build/
+__pycache__/
