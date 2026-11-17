@@ -1,0 +1,7 @@
+button,cc2530_pin,gpio,active_level,mask
+S1,8,P1.2,LOW,0x04
+S2,7,P1.3,LOW,0x08
+S3,6,P1.4,LOW,0x10
+S4,5,P1.5,LOW,0x20
+S5,38,P1.6,LOW,0x40
+S6,37,P1.7,LOW,0x80
