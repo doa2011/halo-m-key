@@ -1,0 +1,81 @@
+name: Build ESP32_MOS_X4 CC2530 Flasher
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - "firmware/esp32/**"
+      - "tools/prepare_esp32_flasher.py"
+      - "tools/check_ota_image.py"
+      - ".github/workflows/esp32-flasher-build.yml"
+      - "README.md"
+      - "docs/**"
+  pull_request:
+    paths:
+      - "firmware/esp32/**"
+      - "tools/prepare_esp32_flasher.py"
+      - "tools/check_ota_image.py"
+      - ".github/workflows/esp32-flasher-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-esp32:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PlatformIO
+        run: |
+          python -m pip install --upgrade pip
+          pip install platformio
+
+      - name: Fetch pinned upstream source
+        env:
+          UPSTREAM_SHA: 3a5b9fc123cf660a61edad1d79502ea7b36c05fb
+        run: |
+          git clone https://github.com/z9m/ESP32-CC-Tool-Pro.git .work/ESP32-CC-Tool-Pro
+          git -C .work/ESP32-CC-Tool-Pro checkout "$UPSTREAM_SHA"
+          test "$(git -C .work/ESP32-CC-Tool-Pro rev-parse HEAD)" = "$UPSTREAM_SHA"
+
+      - name: Apply ESP32_MOS_X4 adaptation
+        run: python tools/prepare_esp32_flasher.py .work/ESP32-CC-Tool-Pro
+
+      - name: Compile classic ESP32 firmware
+        run: pio run -d .work/ESP32-CC-Tool-Pro -e esp32dev
+
+      - name: Validate app-only OTA image
+        run: |
+          mkdir -p dist
+          cp .work/ESP32-CC-Tool-Pro/.pio/build/esp32dev/firmware.bin dist/cc2530-flasher-esp32dev-app.bin
+          python tools/check_ota_image.py dist/cc2530-flasher-esp32dev-app.bin
+          sha256sum dist/cc2530-flasher-esp32dev-app.bin > dist/SHA256SUMS.txt
+          printf 'upstream=https://github.com/z9m/ESP32-CC-Tool-Pro\nupstream_commit=3a5b9fc123cf660a61edad1d79502ea7b36c05fb\nboard=esp32dev\ndc_gpio=18\ndd_gpio=19\nreset_gpio=21\nreserved_gpio=16,17\npartition_scheme=default.csv (two 0x140000 OTA slots)\n' > dist/BUILD-MANIFEST.txt
+
+      - name: Package corresponding GPL source
+        run: |
+          tar --exclude=.git --exclude=.pio -czf dist/cc2530-flasher-esp32dev-source.tar.gz -C .work ESP32-CC-Tool-Pro
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cc2530-flasher-esp32dev
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
