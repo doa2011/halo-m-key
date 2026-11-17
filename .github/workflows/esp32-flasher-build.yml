@@ -43,6 +43,7 @@ jobs:
         env:
           UPSTREAM_SHA: 3a5b9fc123cf660a61edad1d79502ea7b36c05fb
         run: |
+          mkdir -p .work
           git clone https://github.com/z9m/ESP32-CC-Tool-Pro.git .work/ESP32-CC-Tool-Pro
           git -C .work/ESP32-CC-Tool-Pro checkout "$UPSTREAM_SHA"
           test "$(git -C .work/ESP32-CC-Tool-Pro rev-parse HEAD)" = "$UPSTREAM_SHA"
