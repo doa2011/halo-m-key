@@ -1,34 +1,47 @@
-# ESP32_MOS_X4 烧录器适配
+# ESP32_MOS_X4 临时烧录器
 
-目标板：用户现有 ESP32_MOS_X4，现运行 ESPHome；现有 YAML 使用 `board: esp32dev`、Arduino framework，并启用带加密的 ESPHome OTA。
+## 目标与引脚
 
-## 必须保留的 GPIO
+目标板是当前运行 ESPHome、`board: esp32dev` 的 ESP32_MOS_X4。此次临时转换后不再承担 RO 净水器控制。
 
-- GPIO16 / D16：进水阀 MOS 驱动，**禁止使用**。
-- GPIO17 / D17：废水/冲洗阀 MOS 驱动，**禁止使用**。
-- GPIO18 / GPIO19：TDS UART，禁止占用。
-- GPIO21 / GPIO22：I²C SDA/SCL，禁止占用。
-- GPIO23：状态灯；GPIO4/13 流量计；GPIO14 蜂鸣器；GPIO25/32 输入；GPIO26/27 MOS 输出，也视为已占用。
+| ESP32 GPIO | CC2530 |
+|---|---|
+| GPIO18 | DC / P2.2（QFN40 pin 34） |
+| GPIO19 | DD / P2.1（QFN40 pin 35） |
+| GPIO21 | RESET_N（QFN40 pin 20） |
 
-当前没有足够证据指定 CC 调试接口的 GPIO。不要沿用上游 GPIO4/5/6，也不要沿用此前错误提出的 GPIO18/19/21。先根据 ESP32_MOS_X4 原理图、排针丝印和通断测试，确定三个未占用且电气合适的脚。
+**GPIO16/D16 与 GPIO17/D17 严格保留，不在代码中配置或使用。** 18/19/21 是因临时停用 TDS UART 与 I²C 后重新分配的信号脚，仍需在 MOS_X4 实物上确认引出和无板载冲突。
 
-## 上游工程现状
+## 构建
 
-上游：https://github.com/z9m/ESP32-CC-Tool-Pro
+- 上游：[z9m/ESP32-CC-Tool-Pro](https://github.com/z9m/ESP32-CC-Tool-Pro)
+- 固定提交：`3a5b9fc123cf660a61edad1d79502ea7b36c05fb`
+- PlatformIO 目标：`esp32dev`（经典 ESP32），不再使用上游默认 ESP32-S3
+- 适配脚本：`tools/prepare_esp32_flasher.py`
+- 构建配置：本目录 `platformio.ini`
+- 自动构建：`.github/workflows/esp32-flasher-build.yml`
 
-当前上游 `platformio.ini` 默认 `env:esp32s3` / `esp32-s3-devkitc-1`，而目标 ESPHome 配置为 `esp32dev`（经典 ESP32）。必须新增/调整 classic ESP32 构建环境，不能把 S3 固件刷到经典 ESP32。
+GitHub Actions push/PR 时构建并上传 artifact。推送版本标签（如 `v0.1.0`）时创建 Release。发布包包括 app-only BIN、SHA256、manifest 与对应 GPL 源码。
 
-## OTA 迁移原则
+## OTA
 
-当前 ESPHome 已启用 `ota: - platform: esphome` 和加密。理论上可以通过现有 ESPHome OTA 通道一次性上传兼容的 ESP32 应用镜像，但必须满足：目标是经典 ESP32、镜像是 app-only OTA image（不能用含 bootloader/partition table 的 factory image）、匹配现有 OTA 分区表且小于 OTA slot、OTA 加密认证正确。成功切换后 ESPHome OTA/API 不再存在；后续应在烧录器固件中实现自己的 OTA 更新入口，或保留 USB 恢复方案。
+首次迁移仍使用当前 ESPHome 原生加密 OTA；目标镜像必须是 app-only image，不能使用 factory image。构建检查以标准 `default.csv` 双 OTA 分区（每个 app slot 0x140000）为上限，但在上传前还必须确认当前 ESPHome 设备实际分区表相同。
 
-ESPHome 官方文档：
-- https://esphome.io/components/ota/esphome/
-- https://esphome.io/guides/cli/
+切换后固件提供 ArduinoOTA：
+- mDNS 主机名：`cc-tool.local`
+- 初始 OTA 密码：`12345678`
+- 网页 WiFi Settings 下方可设置新 OTA 密码
+- PlatformIO 默认上传命令：`pio run -e esp32dev -t upload`
 
-## 安全要求
+更改 OTA 密码后，请同步修改本文件夹 `platformio.ini` 的 `upload_flags`。不要在不可信网络中保留初始密码。
 
-1. 不要在未确认 GPIO 和分区大小前上传。
-2. 先通过 ESPHome OTA 上传一个保留原有 API/Wi-Fi/OTA 的过渡 ESPHome 固件并验证稳定（如果需要调整分区或 OTA 权限）；不应贸然覆盖唯一可远程恢复的应用。
-3. 记录 Flash 容量、分区表、OTA slot 大小、当前 app 大小及目标 app 大小。
-4. 保留 USB-UART 串口恢复路径；OTA 失败或分区不兼容时，不能保证自动恢复。
+## 恢复
+
+切换后 ESPHome API/OTA 不再运行，不能再用原 ESPHome OTA 回刷。请保留原 YAML、secrets（离线保管）和串口恢复路径。首次迁移前确认 USB-UART 可以进入下载模式。
+
+## 安全边界
+
+- 不接 5V 到 CC2530 VDD 或 DC/DD/RESET。
+- ESP32 与 CC2530 共地。
+- 目标板电源只允许一个受控 3.3V 来源，避免纽扣电池与外部电源反灌。
+- 备份 Halo 原厂 Flash 前，不执行 Erase / Unlock / Write。
