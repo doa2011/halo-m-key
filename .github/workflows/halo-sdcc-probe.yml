@@ -20,7 +20,7 @@ jobs:
           git -C sdcc checkout 181e75662ba181efa9a88251454c9418025a0740
           mkdir sdcc-build
           cd sdcc-build
-          ../sdcc/configure --disable-sdcdb --disable-sdbinutils --disable-ucsim
+          ../sdcc/configure --disable-sdcdb --disable-sdbinutils --disable-ucsim --disable-pic14-port --disable-pic16-port
           make -j2
           bin/sdcc --version
       - name: Compile and link ABI smoke test (not Zigbee firmware)
