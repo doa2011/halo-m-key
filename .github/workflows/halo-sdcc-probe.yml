@@ -1,0 +1,39 @@
+name: Halo SDCC-IAR toolchain probe
+on:
+  push:
+    branches: [feature/sdcc-build]
+    paths: ['.github/workflows/halo-sdcc-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  toolchain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: sudo apt-get update && sudo apt-get install -y autoconf automake make gcc g++ bison flex python3 jq libboost-dev libtool texinfo
+      - name: Build pinned SDCC fork
+        run: |
+          git clone https://github.com/devbis/sdcc_iar.git sdcc
+          git -C sdcc checkout 181e75662ba181efa9a88251454c9418025a0740
+          mkdir sdcc-build
+          cd sdcc-build
+          ../sdcc/configure --disable-sdcdb --disable-sdbinutils --disable-ucsim
+          make -j2
+          bin/sdcc --version
+      - name: Compile and link ABI smoke test (not Zigbee firmware)
+        run: |
+          mkdir -p probe
+          cd probe
+          printf 'volatile __xdata unsigned char value;\nvoid main(void){value=42; for(;;){}}\n' > abi_probe.c
+          ../sdcc-build/bin/sdcc -mmcs51 --abi-iar -c abi_probe.c
+          ../sdcc-build/bin/sdcc -mmcs51 --abi-iar abi_probe.rel
+          ../sdcc-build/bin/packihx abi_probe.ihx > abi_probe.hex
+          test -s abi_probe.hex
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdcc-abi-probe-NOT-HALO-FIRMWARE
+          path: probe/
+          if-no-files-found: error
