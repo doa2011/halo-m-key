@@ -1,0 +1,40 @@
+name: Halo M-Key FreePad Source Validation
+
+on:
+  push:
+    branches: ["main", "feature/**"]
+    paths:
+      - "firmware/halo/**"
+      - "tools/prepare_halo_freepad.py"
+      - "tools/check_halo_port.py"
+      - ".github/workflows/halo-m-key-source-check.yml"
+  pull_request:
+    paths:
+      - "firmware/halo/**"
+      - "tools/prepare_halo_freepad.py"
+      - "tools/check_halo_port.py"
+      - ".github/workflows/halo-m-key-source-check.yml"
+  workflow_dispatch:
+
+jobs:
+  source-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch upstream FreePad source
+        run: |
+          git clone --depth 1 https://github.com/diyruz/freepad.git .work/freepad
+          git -C .work/freepad -c url.https://github.com/.insteadOf=git@github.com: submodule update --init --recursive
+      - name: Apply Halo M-Key board adaptation
+        run: python tools/prepare_halo_freepad.py .work/freepad
+      - name: Validate six-key mapping and PM3 configuration
+        run: python tools/check_halo_port.py .work/freepad
+      - name: Validate IAR project XML
+        run: python -c "import xml.etree.ElementTree as ET; ET.parse('.work/freepad/CC2530DB/GenericApp.ewp'); ET.parse('.work/freepad/CC2530DB/GenericApp.eww')"
+      - name: Publish source-only artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: halo-m-key-patched-freepad-source
+          path: .work/freepad/
+          if-no-files-found: error
+          retention-days: 14
