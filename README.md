@@ -1,6 +1,6 @@
 # Halo M-Key (CC2530) 低功耗固件移植
 
-> **状态：Halo 六键硬件映射已实测；ESP32_MOS_X4 的经典 ESP32 烧录器已完成 esptool 完整镜像构建配置，等待新一轮 CI 和实机串口刷写验证。Halo Zigbee HEX 尚未完成。**
+> **当前状态：Halo M-Key 六键映射已实测；FreePad 源码适配与静态检查已通过。Halo 专用 HEX 仍需在安装 TI Z-Stack 3.0.2 和 IAR 8051 的 Windows 构建机上完成真实编译，尚未发布可刷写固件。**
 
 ## 已确认的 Halo V0.6 硬件
 
@@ -15,55 +15,29 @@
 
 按键按下接 GND，当前不配置 LED。详见 `hardware/pins.csv`。
 
+## Halo M-Key 固件目标
+
+基于 [DIYRuZ FreePad](https://github.com/diyruz/freepad) 移植，目标功能：
+- 六键独立 action：单击、双击、长按；长按释放另有 release 事件
+- Zigbee2MQTT FreePad 兼容
+- 无 LED 硬件配置
+- P1.2-P1.7 下降沿中断唤醒，FreePad PM3 低功耗配置
+
+移植脚本：`firmware/halo/prepare_halo_freepad.py`
+移植验证：`tools/check_halo_port.py`
+说明：`docs/HALO-M-KEY-FreePad移植.md`
+
+## 构建状态
+
+- GitHub Actions `Halo M-Key FreePad Source Validation` 已验证源码补丁、六键映射和 IAR 项目 XML。
+- 该 CI **不生成 HEX**。
+- 真正编译依赖 TI Z-Stack 3.0.2 和有合法许可的 IAR Embedded Workbench for 8051。
+- `.github/workflows/halo-m-key-iar-build.yml` 提供 self-hosted Windows runner 构建入口；runner 标签为 `iar8051`、`zstack302`，并需设置 `ZSTACK_HOME`、`IARBUILD_EXE`。
+
 ## ESP32_MOS_X4 临时烧录器
 
-本次采用 USB-UART + Espressif esptool 首次烧录，不再依赖 ESPHome OTA。ESP32_MOS_X4 临时停止净水器 ESPHome 控制，改为运行 CC2530 Flasher。
+ESP32_MOS_X4 已有经典 ESP32 esptool factory 镜像构建配置。GPIO16/D16、GPIO17/D17 保留；CC2530 烧录接口临时分配 GPIO18=DC、GPIO19=DD、GPIO21=RESET。首次刷机前务必备份完整 4 MB Flash。详见 `docs/ESP32-MOS-X4接线与OTA.md`。
 
-| ESP32 GPIO | CC2530 信号 |
-|---|---|
-| GPIO18 | DC / P2.2 |
-| GPIO19 | DD / P2.1 |
-| GPIO21 | RESET_N |
-| GND | GND |
+## 许可证与数据保护
 
-GPIO16/D16、GPIO17/D17 明确保留，不分配、不配置。18/19/21 仍须按 MOS_X4 实物确认引出和板载电路后接线。
-
-## esptool 完整烧录包
-
-GitHub Actions 固定使用上游提交 `3a5b9fc123cf660a61edad1d79502ea7b36c05fb`，编译经典 ESP32 `esp32dev`，并将 Bootloader、Partition Table、OTA Data 初始化镜像和应用程序合并为：
-
-`cc2530-flasher-esp32dev-factory.bin`
-
-构建采用明确的 4 MB 分区表：两个 0x140000 OTA app slot，以及约 1.4 MB 的 LittleFS/SPIFFS 数据区，供烧录器保存 CC2530 dump 和待写入固件。实际表见 `firmware/esp32/partitions.csv`。
-
-### Windows 串口烧录
-
-1. 下载 GitHub Actions 的 `cc2530-flasher-esp32dev-esptool` artifact 并解压。
-2. 安装 Python esptool：`py -m pip install esptool==4.9.0`。
-3. 先运行 `backup_esptool.bat COMx`，对原有 4 MB Flash 连续读取两次并进行逐字节比较；只有两份备份一致才继续。
-4. 确认 ESP32 芯片和 4 MB Flash，保存好双份备份。
-5. 运行 `flash_esptool.bat COMx`，将 COMx 换成实际串口，例如 COM5。
-
-脚本会先执行 `erase_flash`，再将 factory 镜像写入 0x0。**这会清空原 ESPHome 固件、分区表、Wi-Fi 凭据、NVS 和其他 Flash 数据。必须先备份，且准备好 USB-UART 恢复。**
-
-也可以手动执行：
-
-```powershell
-py -m esptool --chip esp32 --port COM5 --baud 460800 erase_flash
-py -m esptool --chip esp32 --port COM5 --baud 460800 write_flash --flash_mode dio --flash_freq 40m --flash_size 4MB 0x0 cc2530-flasher-esp32dev-factory.bin
-```
-
-上电后默认 Wi-Fi：
-- SSID：`ESP32-CC-Flasher`
-- 密码：`12345678`
-- 管理地址：`http://192.168.4.1`
-
-网页内可配置连接家庭 Wi-Fi。烧录器应用仍保留 ArduinoOTA，后续更新可选择 OTA，但首次迁移不使用它。
-
-## Halo 固件上游
-
-基于 [DIYRuZ FreePad](https://github.com/diyruz/freepad) 的 CC2530 方案移植 P1.2–P1.7 六键、低功耗与 Zigbee2MQTT 事件。需要匹配 TI Z-Stack 与 IAR 8051 工具链。
-
-## 数据保护
-
-在擦除 ESP32 Flash 前，建议用 esptool 读取完整 4 MB 并校验 SHA-256。CC2530 原厂固件备份应读取两次、校验 SHA-256，并保存在本地，不要提交到公开 GitHub 仓库。不要在未确认锁定状态时对 CC2530 执行 Unlock/Erase。
+FreePad 上游采用 GPL-3.0；TI Z-Stack SDK 与 IAR 工具链遵循各自许可，不随本仓库打包。不要把 Halo 原厂固件备份提交到公开仓库。
