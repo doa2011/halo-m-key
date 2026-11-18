@@ -40,8 +40,9 @@ GitHub Actions 固定使用上游提交 `3a5b9fc123cf660a61edad1d79502ea7b36c05f
 
 1. 下载 GitHub Actions 的 `cc2530-flasher-esp32dev-esptool` artifact 并解压。
 2. 安装 Python esptool：`py -m pip install esptool==4.9.0`。
-3. 先确认 ESP32 芯片和 4 MB Flash；备份原有 4 MB Flash 后再操作。
-4. 运行 `flash_esptool.bat COMx`，将 COMx 换成实际串口，例如 COM5。
+3. 先运行 `backup_esptool.bat COMx`，对原有 4 MB Flash 连续读取两次并进行逐字节比较；只有两份备份一致才继续。
+4. 确认 ESP32 芯片和 4 MB Flash，保存好双份备份。
+5. 运行 `flash_esptool.bat COMx`，将 COMx 换成实际串口，例如 COM5。
 
 脚本会先执行 `erase_flash`，再将 factory 镜像写入 0x0。**这会清空原 ESPHome 固件、分区表、Wi-Fi 凭据、NVS 和其他 Flash 数据。必须先备份，且准备好 USB-UART 恢复。**
 
