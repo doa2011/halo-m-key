@@ -31,7 +31,7 @@ Z-Stack reusable library： https://github.com/diyruz/zstack-lib
 
 ## 当前移植实现
 
-`tools/prepare_halo_freepad.py` 对干净的 FreePad checkout 执行确定性修改：
+`firmware/halo/prepare_halo_freepad.py` 对干净的 FreePad checkout 执行确定性修改：
 
 1. 新增 `HAL_BOARD_HALO_M_KEY` 板型。
 2. 将逻辑按钮数改为 6。
@@ -40,11 +40,14 @@ Z-Stack reusable library： https://github.com/diyruz/zstack-lib
 5. 将 P1 位掩码映射到 endpoint 1-6。
 6. 使用 PM3、无 Touchlink 的 IAR 配置，降低代码体积和待机功耗。
 
-FreePad 的 multi-function 模式默认用约 250 ms 窗口区分单击/双击，长按起始约为 1 秒（250+750 ms）。释放事件按上游行为额外上报。Zigbee2MQTT action 事件格式沿用 FreePad 既有 converter：`1_single`、`1_double`、`1_hold`、`1_release` 等。
+FreePad 的 multi-function 模式默认用 250 ms 窗口区分单击/双击，长按起始约为 1 秒（250+750 ms）。释放事件按上游行为额外上报。Zigbee2MQTT action 事件格式沿用 FreePad 既有 converter：`1_single`、`1_double`、`1_hold`、`1_release` 等。
 
 ## 构建要求（真实 HEX）
 
 FreePad 是 TI Z-Stack 3.0.2 + IAR 8051 工程，不是 PlatformIO 工程。必须准备：
+- Windows 10/11 构建机（可作为 GitHub Actions self-hosted runner）；
+- IAR EW8051 10.20.1（TI 为 CC2530 推荐的版本；可申请 IAR 评估版，评估授权有期限）；
+- TI Z-Stack 3.0.2（官方安装包，安装时遵循 TI 的下载/出口许可要求）；
 - TI Z-Stack 3.0.2 Home Automation SDK；
 - 与该 SDK 兼容的 IAR Embedded Workbench for 8051（已安装、许可可用）；
 - Windows 构建主机或已配置相同软件的 self-hosted GitHub Actions runner。
@@ -71,6 +74,15 @@ py tools\check_halo_port.py $env:ZSTACK_HOME\Projects\zstack\HomeAutomation\free
 - https://www.zigbee2mqtt.io/devices/DIYRuZ_FreePad.html
 - https://github.com/diyruz/freepad
 - https://github.com/diyruz/zstack-lib
+
+## 自动编译环境配置
+
+本仓库不能合法分发 IAR 编译器或 TI SDK。普通 GitHub-hosted runner 不预装这两套工具，且 IAR 授权不能通过公开 workflow 绕过。请在一台 Windows 机器安装上述工具，然后在 GitHub 仓库 Settings → Actions → Runners → New self-hosted runner 添加 runner，平台选 Windows x64，标签额外添加 `iar8051`、`zstack302`。在该 runner 服务进程环境中设置：
+
+- `ZSTACK_HOME`：TI Z-Stack 3.0.2 安装根目录；
+- `IARBUILD_EXE`：IAR 的 `IarBuild.exe` 完整路径。
+
+启动 runner 后，在 Actions → Halo M-Key IAR CC2530 HEX Build → Run workflow 手动触发首次构建。成功后会产生 HEX、MAP、SHA256 和上游 LICENSE artifact。后续可将此 workflow 改为 push/PR 自动触发。
 
 ## 当前验证边界
 
