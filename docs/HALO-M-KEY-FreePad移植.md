@@ -54,7 +54,7 @@ FreePad 是 TI Z-Stack 3.0.2 + IAR 8051 工程，不是 PlatformIO 工程。必�
 并初始化 `zstack-lib` 子模块。运行：
 
 ```powershell
-py tools\prepare_halo_freepad.py $env:ZSTACK_HOME\Projects\zstack\HomeAutomation\freepad
+py firmware\halo\prepare_halo_freepad.py $env:ZSTACK_HOME\Projects\zstack\HomeAutomation\freepad
 py tools\check_halo_port.py $env:ZSTACK_HOME\Projects\zstack\HomeAutomation\freepad
 & "$env:IARBUILD_EXE" "$env:ZSTACK_HOME\Projects\zstack\HomeAutomation\freepad\CC2530DB\GenericApp.ewp" -build HALO_M_KEY_PM3 -log all
 ```
