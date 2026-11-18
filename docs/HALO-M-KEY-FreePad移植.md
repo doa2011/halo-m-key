@@ -77,6 +77,8 @@ py tools\check_halo_port.py $env:ZSTACK_HOME\Projects\zstack\HomeAutomation\free
 
 ## 自动编译环境配置
 
+注意：不要使用 IAR KickStart 4 KB 限制版，完整 Z-Stack 工程需要完整功能的评估版或商业授权。IAR 的 8051 Evaluation Edition 是限时评估版，不应与 KickStart 混淆。
+
 本仓库不能合法分发 IAR 编译器或 TI SDK。普通 GitHub-hosted runner 不预装这两套工具，且 IAR 授权不能通过公开 workflow 绕过。请在一台 Windows 机器安装上述工具，然后在 GitHub 仓库 Settings → Actions → Runners → New self-hosted runner 添加 runner，平台选 Windows x64，标签额外添加 `iar8051`、`zstack302`。在该 runner 服务进程环境中设置：
 
 - `ZSTACK_HOME`：TI Z-Stack 3.0.2 安装根目录；
