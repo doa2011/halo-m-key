@@ -23,6 +23,7 @@ on:
       - "tools/check_factory_image.py"
       - "tools/flash_esptool.bat"
       - "tools/flash_esptool.sh"
+      - "tools/backup_esptool.bat"
       - ".github/workflows/esp32-flasher-build.yml"
   workflow_dispatch:
 
