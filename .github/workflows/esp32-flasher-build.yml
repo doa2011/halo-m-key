@@ -8,6 +8,7 @@ on:
       - "firmware/esp32/**"
       - "tools/prepare_esp32_flasher.py"
       - "tools/check_ota_image.py"
+      - "tools/check_factory_image.py"
       - ".github/workflows/esp32-flasher-build.yml"
       - "README.md"
       - "docs/**"
@@ -16,6 +17,7 @@ on:
       - "firmware/esp32/**"
       - "tools/prepare_esp32_flasher.py"
       - "tools/check_ota_image.py"
+      - "tools/check_factory_image.py"
       - ".github/workflows/esp32-flasher-build.yml"
   workflow_dispatch:
 
@@ -29,15 +31,10 @@ jobs:
       - name: Checkout project
         uses: actions/checkout@v4
 
-      - name: Install Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install PlatformIO
+      - name: Install Python build tools
         run: |
           python -m pip install --upgrade pip
-          pip install platformio
+          pip install platformio esptool==4.9.0
 
       - name: Fetch pinned upstream source
         env:
@@ -54,13 +51,33 @@ jobs:
       - name: Compile classic ESP32 firmware
         run: pio run -d .work/ESP32-CC-Tool-Pro -e esp32dev
 
-      - name: Validate app-only OTA image
+      - name: Assemble esptool factory image
         run: |
+          set -euo pipefail
+          BUILD=.work/ESP32-CC-Tool-Pro/.pio/build/esp32dev
           mkdir -p dist
-          cp .work/ESP32-CC-Tool-Pro/.pio/build/esp32dev/firmware.bin dist/cc2530-flasher-esp32dev-app.bin
-          python tools/check_ota_image.py dist/cc2530-flasher-esp32dev-app.bin
-          sha256sum dist/cc2530-flasher-esp32dev-app.bin > dist/SHA256SUMS.txt
-          printf 'upstream=https://github.com/z9m/ESP32-CC-Tool-Pro\nupstream_commit=3a5b9fc123cf660a61edad1d79502ea7b36c05fb\nboard=esp32dev\ndc_gpio=18\ndd_gpio=19\nreset_gpio=21\nreserved_gpio=16,17\npartition_scheme=default.csv (two 0x140000 OTA slots)\n' > dist/BUILD-MANIFEST.txt
+          cp "$BUILD/bootloader.bin" dist/bootloader.bin
+          cp "$BUILD/partitions.bin" dist/partitions.bin
+          cp "$BUILD/boot_app0.bin" dist/boot_app0.bin
+          cp "$BUILD/firmware.bin" dist/firmware.bin
+          python tools/check_ota_image.py dist/firmware.bin
+          python -m esptool --chip esp32 merge_bin \
+            -o dist/cc2530-flasher-esp32dev-factory.bin \
+            --flash_mode dio --flash_freq 40m --flash_size 4MB \
+            0x1000 dist/bootloader.bin \
+            0x8000 dist/partitions.bin \
+            0xe000 dist/boot_app0.bin \
+            0x10000 dist/firmware.bin
+          python tools/check_factory_image.py dist/cc2530-flasher-esp32dev-factory.bin
+
+      - name: Add serial flashing helpers and manifest
+        run: |
+          cp tools/flash_esptool.bat dist/flash_esptool.bat
+          cp tools/flash_esptool.sh dist/flash_esptool.sh
+          chmod +x dist/flash_esptool.sh
+          printf 'target=ESP32 classic (esp32dev)\nchip_revision=ESP32 rev 3.x class; verify device identity before flashing\nflash_size=4MB\nflash_mode=DIO\nflash_frequency=40MHz\npartition_table=partitions.csv\nbootloader_offset=0x1000\npartition_table_offset=0x8000\nboot_app0_offset=0xE000\napplication_offset=0x10000\ndc_gpio=18\ndd_gpio=19\nreset_gpio=21\nreserved_gpio=16,17\ninitial_flash_method=USB-UART esptool\n' > dist/BUILD-MANIFEST.txt
+          printf 'esptool==4.9.0\n' > dist/ESPTOOL-VERSION.txt
+          sha256sum dist/* > dist/SHA256SUMS.txt
 
       - name: Package corresponding GPL source
         run: |
@@ -69,7 +86,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: cc2530-flasher-esp32dev
+          name: cc2530-flasher-esp32dev-esptool
           path: dist/*
           if-no-files-found: error
           retention-days: 30
