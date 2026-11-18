@@ -3,6 +3,9 @@ name: Halo M-Key IAR CC2530 HEX Build
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   iar-build:
     # Requires a self-hosted Windows runner with licensed IAR 8051 and TI Z-Stack 3.0.2.
@@ -15,6 +18,7 @@ jobs:
       - name: Verify build host environment
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           if (-not $env:ZSTACK_HOME) { throw "Set ZSTACK_HOME on the self-hosted runner to the TI Z-Stack 3.0.2 installation root." }
           if (-not $env:IARBUILD_EXE -or -not (Test-Path $env:IARBUILD_EXE)) { throw "Set IARBUILD_EXE to the licensed IarBuild.exe path." }
           $projectRoot = Join-Path $env:ZSTACK_HOME "Projects\zstack\HomeAutomation\freepad"
@@ -43,3 +47,19 @@ jobs:
           path: dist/*
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish versioned GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: halo-m-key-build-${{ github.run_number }}
+          name: Halo M-Key CC2530 build ${{ github.run_number }}
+          body: |
+            IAR-built Halo M-Key CC2530 PM3 firmware.
+            Source commit: ${{ github.sha }}
+            This release is produced only after IAR reports success and non-empty HEX and MAP files are verified.
+          files: |
+            dist/halo-m-key-cc2530-pm3.hex
+            dist/halo-m-key-cc2530-pm3.map
+            dist/SHA256.txt
+            dist/FREEPAD-LICENSE
+          fail_on_unmatched_files: true
