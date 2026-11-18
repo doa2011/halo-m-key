@@ -15,6 +15,7 @@ root = Path(sys.argv[1]).resolve()
 required = [
     root / "Source/preinclude.h",
     root / "Source/hal_key.c",
+    root / "Source/hal_board_cfg.h",
     root / "Source/zcl_freepadapp_data.c",
     root / "CC2530DB/GenericApp.ewp",
     root / "CC2530DB/GenericApp.eww",
@@ -114,7 +115,7 @@ replace_once(
 #elif defined(HAL_BOARD_HALO_M_KEY)
     P1INP &= ~HAL_KEY_P1_INPUT_PINS;      // GPIO input with pull resistor
     P2INP &= ~HAL_KEY_BIT6;               // port 1 pull-up
-    PICTL |= HAL_KEY_BIT1;                // falling edge on port 1
+    PICTL |= HAL_KEY_BIT1 | HAL_KEY_BIT2; // falling edge on P1.2..P1.7 (low and high nibbles)
     IEN2 |= HAL_KEY_BIT4;                 // enable port 1 interrupt
     P1IFG &= ~HAL_KEY_P1_INTERRUPT_PINS;
     P1IF = 0;
@@ -154,6 +155,29 @@ replace_once(
     }
  
 #endif""",
+)
+
+
+# Halo M-Key has no LED; provide zero-mask aliases required by shared HAL_BOARD_INIT.
+board_cfg = root / "Source/hal_board_cfg.h"
+replace_once(
+    board_cfg,
+    """#elif defined(HAL_BOARD_LETV)
+/* 1 - P1_0 Red */""",
+    """#elif defined(HAL_BOARD_HALO_M_KEY)
+/* No physical LEDs on Halo M-Key. Keep dummy aliases for common HAL init;
+ * LED bit masks are zero, so no GPIO is switched to output. */
+  #define LED1_BV           0x00
+  #define LED1_SBIT         P0_0
+  #define LED1_DDR          P0DIR
+  #define LED1_POLARITY     ACTIVE_HIGH
+  #define LED2_BV           0x00
+  #define LED2_SBIT         P0_0
+  #define LED2_DDR          P0DIR
+  #define LED2_POLARITY     ACTIVE_HIGH
+
+#elif defined(HAL_BOARD_LETV)
+/* 1 - P1_0 Red */""",
 )
 
 # Translate the measured P1 bit mask to FreePad logical endpoint numbers.
