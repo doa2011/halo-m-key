@@ -1,6 +1,6 @@
 # Halo M-Key (CC2530) 低功耗固件移植
 
-> **状态：Halo 六键硬件映射已实测；ESP32 烧录器已加入经典 ESP32 构建适配与 OTA 代码，等待 GitHub Actions 首次编译验证。Halo Zigbee HEX 尚未完成。** 本仓库目前不应被视为已实机验证的完整固件发布。
+> **状态：Halo 六键硬件映射已实测；ESP32_MOS_X4 的经典 ESP32 烧录器已完成 esptool 完整镜像构建配置，等待新一轮 CI 和实机串口刷写验证。Halo Zigbee HEX 尚未完成。**
 
 ## 已确认的 Halo V0.6 硬件
 
@@ -17,7 +17,7 @@
 
 ## ESP32_MOS_X4 临时烧录器
 
-本次采用临时转换方案：ESP32_MOS_X4 暂停净水器 ESPHome 功能，临时运行 CC2530 Flasher。GPIO16/D16、GPIO17/D17 由用户明确要求保留，烧录器不分配、不配置这两个脚。
+本次采用 USB-UART + Espressif esptool 首次烧录，不再依赖 ESPHome OTA。ESP32_MOS_X4 临时停止净水器 ESPHome 控制，改为运行 CC2530 Flasher。
 
 | ESP32 GPIO | CC2530 信号 |
 |---|---|
@@ -26,13 +26,38 @@
 | GPIO21 | RESET_N |
 | GND | GND |
 
-18/19/21 是临时模式下释放 TDS UART/I²C 后的候选分配；仍须核对 MOS_X4 实物引出和板载电路，再接线。详见 `docs/ESP32-MOS-X4接线与OTA.md`。
+GPIO16/D16、GPIO17/D17 明确保留，不分配、不配置。18/19/21 仍须按 MOS_X4 实物确认引出和板载电路后接线。
 
-## ESP32 自动编译
+## esptool 完整烧录包
 
-`esp32-flasher-build.yml` 使用固定上游提交 `3a5b9fc123cf660a61edad1d79502ea7b36c05fb`，将上游 ESP32-S3 工程适配到经典 ESP32 `esp32dev`，并加入 ArduinoOTA。push/PR 自动编译；成功后上传 app-only BIN、SHA256、manifest 和 GPL 对应源码 artifact；推送 `v*` 标签时发布 GitHub Release。
+GitHub Actions 固定使用上游提交 `3a5b9fc123cf660a61edad1d79502ea7b36c05fb`，编译经典 ESP32 `esp32dev`，并将 Bootloader、Partition Table、OTA Data 初始化镜像和应用程序合并为：
 
-CI 通过不等于实物 OTA 已验证。首次烧录前仍需核实实际 OTA 分区大小、芯片/Flash 型号、GPIO 引出和 USB 恢复能力。
+`cc2530-flasher-esp32dev-factory.bin`
+
+构建采用明确的 4 MB 分区表：两个 0x140000 OTA app slot，以及约 1.4 MB 的 LittleFS/SPIFFS 数据区，供烧录器保存 CC2530 dump 和待写入固件。实际表见 `firmware/esp32/partitions.csv`。
+
+### Windows 串口烧录
+
+1. 下载 GitHub Actions 的 `cc2530-flasher-esp32dev-esptool` artifact 并解压。
+2. 安装 Python esptool：`py -m pip install esptool==4.9.0`。
+3. 先确认 ESP32 芯片和 4 MB Flash；备份原有 4 MB Flash 后再操作。
+4. 运行 `flash_esptool.bat COMx`，将 COMx 换成实际串口，例如 COM5。
+
+脚本会先执行 `erase_flash`，再将 factory 镜像写入 0x0。**这会清空原 ESPHome 固件、分区表、Wi-Fi 凭据、NVS 和其他 Flash 数据。必须先备份，且准备好 USB-UART 恢复。**
+
+也可以手动执行：
+
+```powershell
+py -m esptool --chip esp32 --port COM5 --baud 460800 erase_flash
+py -m esptool --chip esp32 --port COM5 --baud 460800 write_flash --flash_mode dio --flash_freq 40m --flash_size 4MB 0x0 cc2530-flasher-esp32dev-factory.bin
+```
+
+上电后默认 Wi-Fi：
+- SSID：`ESP32-CC-Flasher`
+- 密码：`12345678`
+- 管理地址：`http://192.168.4.1`
+
+网页内可配置连接家庭 Wi-Fi。烧录器应用仍保留 ArduinoOTA，后续更新可选择 OTA，但首次迁移不使用它。
 
 ## Halo 固件上游
 
@@ -40,4 +65,4 @@ CI 通过不等于实物 OTA 已验证。首次烧录前仍需核实实际 OTA �
 
 ## 数据保护
 
-优先使用 CC Debug 协议读取两次、校验 SHA-256，保存本地原厂 Flash；未知锁定状态下不要 Unlock/Erase。不要把原厂固件备份直接提交到公开 GitHub 仓库。
+在擦除 ESP32 Flash 前，建议用 esptool 读取完整 4 MB 并校验 SHA-256。CC2530 原厂固件备份应读取两次、校验 SHA-256，并保存在本地，不要提交到公开 GitHub 仓库。不要在未确认锁定状态时对 CC2530 执行 Unlock/Erase。
