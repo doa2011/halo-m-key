@@ -25,7 +25,7 @@
 
 移植脚本：`firmware/halo/prepare_halo_freepad.py`
 移植验证：`tools/check_halo_port.py`
-说明：`docs/HALO-M-KEY-FreePad移植.md`
+说明：`docs/HALO-M-KEY-FreePad移植.md`；构建机部署：`docs/WINDOWS-IAR-Runner部署.md`
 
 ## 构建状态
 
