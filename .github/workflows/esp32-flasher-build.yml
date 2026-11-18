@@ -62,7 +62,9 @@ jobs:
           mkdir -p dist
           cp "$BUILD/bootloader.bin" dist/bootloader.bin
           cp "$BUILD/partitions.bin" dist/partitions.bin
-          cp "$BUILD/boot_app0.bin" dist/boot_app0.bin
+          BOOT_APP0="$(find "$HOME/.platformio/packages" -type f -name boot_app0.bin -print -quit)"
+          test -n "$BOOT_APP0"
+          cp "$BOOT_APP0" dist/boot_app0.bin
           cp "$BUILD/firmware.bin" dist/firmware.bin
           python tools/check_ota_image.py dist/firmware.bin
           python -m esptool --chip esp32 merge_bin \
