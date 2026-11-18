@@ -11,6 +11,7 @@ on:
       - "tools/check_factory_image.py"
       - "tools/flash_esptool.bat"
       - "tools/flash_esptool.sh"
+      - "tools/backup_esptool.bat"
       - ".github/workflows/esp32-flasher-build.yml"
       - "README.md"
       - "docs/**"
@@ -80,6 +81,7 @@ jobs:
         run: |
           cp tools/flash_esptool.bat dist/flash_esptool.bat
           cp tools/flash_esptool.sh dist/flash_esptool.sh
+          cp tools/backup_esptool.bat dist/backup_esptool.bat
           chmod +x dist/flash_esptool.sh
           printf 'target=ESP32 classic (esp32dev)\nchip_revision=ESP32 rev 3.x class; verify device identity before flashing\nflash_size=4MB\nflash_mode=DIO\nflash_frequency=40MHz\npartition_table=partitions.csv\nbootloader_offset=0x1000\npartition_table_offset=0x8000\nboot_app0_offset=0xE000\napplication_offset=0x10000\ndc_gpio=18\ndd_gpio=19\nreset_gpio=21\nreserved_gpio=16,17\ninitial_flash_method=USB-UART esptool\n' > dist/BUILD-MANIFEST.txt
           printf 'esptool==4.9.0\n' > dist/ESPTOOL-VERSION.txt
