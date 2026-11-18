@@ -21,9 +21,19 @@ jobs:
           $ErrorActionPreference = "Stop"
           if (-not $env:ZSTACK_HOME) { throw "Set ZSTACK_HOME on the self-hosted runner to the TI Z-Stack 3.0.2 installation root." }
           if (-not $env:IARBUILD_EXE -or -not (Test-Path $env:IARBUILD_EXE)) { throw "Set IARBUILD_EXE to the licensed IarBuild.exe path." }
-          $projectRoot = Join-Path $env:ZSTACK_HOME "Projects\zstack\HomeAutomation\freepad"
-          New-Item -ItemType Directory -Force -Path (Split-Path $projectRoot) | Out-Null
-          if (Test-Path $projectRoot) { Remove-Item -Recurse -Force $projectRoot }
+          $components = Join-Path $env:ZSTACK_HOME "Components"
+          $homeAutomation = Join-Path $env:ZSTACK_HOME "Projects\zstack\HomeAutomation"
+          if (-not (Test-Path $components)) { throw "ZSTACK_HOME does not contain Components: $components" }
+          if (-not (Test-Path (Join-Path $env:ZSTACK_HOME "Tools\CC2530DB"))) { throw "ZSTACK_HOME does not contain Tools\CC2530DB." }
+          New-Item -ItemType Directory -Force -Path $homeAutomation | Out-Null
+          $projectRoot = Join-Path $homeAutomation "freepad"
+          if (Test-Path $projectRoot) {
+            $origin = git -C $projectRoot remote get-url origin 2>$null
+            if ($LASTEXITCODE -ne 0 -or $origin -notmatch "diyruz/freepad") {
+              throw "Refusing to delete existing non-FreePad directory: $projectRoot"
+            }
+            Remove-Item -Recurse -Force $projectRoot
+          }
           git clone --depth 1 https://github.com/diyruz/freepad.git $projectRoot
           git -C $projectRoot -c url.https://github.com/.insteadOf=git@github.com: submodule update --init --recursive
           python firmware/halo/prepare_halo_freepad.py $projectRoot
