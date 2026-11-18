@@ -9,6 +9,9 @@ jobs:
     runs-on: [self-hosted, Windows, X64, iar8051, zstack302]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Verify build host environment
         shell: pwsh
         run: |
@@ -19,7 +22,7 @@ jobs:
           if (Test-Path $projectRoot) { Remove-Item -Recurse -Force $projectRoot }
           git clone --depth 1 https://github.com/diyruz/freepad.git $projectRoot
           git -C $projectRoot -c url.https://github.com/.insteadOf=git@github.com: submodule update --init --recursive
-          python tools/prepare_halo_freepad.py $projectRoot
+          python firmware/halo/prepare_halo_freepad.py $projectRoot
           python tools/check_halo_port.py $projectRoot
           & $env:IARBUILD_EXE (Join-Path $projectRoot "CC2530DB\GenericApp.ewp") -build HALO_M_KEY_PM3 -log all
           if ($LASTEXITCODE -ne 0) { throw "IAR build failed with exit code $LASTEXITCODE" }
