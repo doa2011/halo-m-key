@@ -35,7 +35,7 @@ replace_once(
     '    MDNS.begin("cc-tool");',
     '''    MDNS.begin("cc-tool");
 
-    // Independent ArduinoOTA service for future wireless updates.
+    // Independent ArduinoOTA service; initial provisioning still uses USB esptool.
     ArduinoOTA.setHostname("cc-tool");
     String otaPassword = preferences.getString("ota_pass", ap_password);
     ArduinoOTA.setPassword(otaPassword.c_str());
@@ -113,6 +113,7 @@ replace_once(
 )
 
 shutil.copy2(root / "firmware" / "esp32" / "platformio.ini", upstream / "platformio.ini")
+shutil.copy2(root / "firmware" / "esp32" / "partitions.csv", upstream / "partitions.csv")
 
 patched = main_cpp.read_text(encoding="utf-8")
 for forbidden in ("#define PIN_CC_CLK  16", "#define PIN_CC_DATA 16", "#define PIN_CC_RST  16",
@@ -122,4 +123,5 @@ for forbidden in ("#define PIN_CC_CLK  16", "#define PIN_CC_DATA 16", "#define P
 
 print("Prepared ESP32_MOS_X4 flasher: DC=18, DD=19, RESET=21")
 print("GPIO16/D16 and GPIO17/D17 are not configured")
-print("ArduinoOTA enabled; default password 12345678 (change in web UI)")
+print("Build uses explicit 4 MB dual-OTA + LittleFS partition table")
+print("Initial provisioning is via USB esptool; ArduinoOTA remains available afterwards")
