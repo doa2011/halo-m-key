@@ -128,6 +128,32 @@ def preceding_boundary_evidence(data,hits):
         rows.append({"start":start,"next_candidate":end,"matches":matches})
     return rows
 
+def aligned_group_evidence(data,hits):
+    # Compare equal-prefix groups at matched C1-relative positions.
+    groups={}
+    for h in hits:
+        groups.setdefault(h["sha256"],[]).append(h)
+    out=[]
+    for digest,members in groups.items():
+        if len(members)<2:
+            continue
+        windows=[data[h["end"]:h["end"]+4096] for h in members]
+        n=min(map(len,windows))
+        runs=[]
+        start=None
+        for i in range(n+1):
+            same=i<n and len({w[i] for w in windows})==1
+            if same and start is None:
+                start=i
+            elif not same and start is not None:
+                if i-start>=8:
+                    runs.append([start,i])
+                start=None
+        out.append({"prefix_sha256":digest,"samples":len(members),
+                    "compared_bytes":n,"invariant_runs":runs,
+                    "invariant_bytes_in_runs":sum(b-a for a,b in runs)})
+    return out
+
 def scan(data):
     hits=[]
     p=0
@@ -159,7 +185,7 @@ def scan(data):
             h["following_span"]={"length":len(span),"sha256":hashlib.sha256(span).hexdigest(),"tail_sha256":hashlib.sha256(span[-256:]).hexdigest()}
     return {"archive_size":len(data),"archive_sha256":hashlib.sha256(data).hexdigest(),
             "candidate_count":len(hits),"unique_prefix_count":len({h["sha256"] for h in hits}),
-            "candidates":hits,"candidate_groups":compare_candidate_groups(hits),"anchor_audit":scan_skipped_anchors(data,hits),"preceding_boundary_evidence":preceding_boundary_evidence(data,hits),"member_boundaries_verified":False,"executable_conversion":False}
+            "candidates":hits,"candidate_groups":compare_candidate_groups(hits),"anchor_audit":scan_skipped_anchors(data,hits),"aligned_group_evidence":aligned_group_evidence(data,hits),"preceding_boundary_evidence":preceding_boundary_evidence(data,hits),"member_boundaries_verified":False,"executable_conversion":False}
 
 def attr(k,v):
     b=len(k).to_bytes(4,"big")+k+len(v).to_bytes(4,"big")+v
@@ -203,6 +229,11 @@ class Tests(unittest.TestCase):
         data=b"\x00\x08"+b"x"*8
         rows=preceding_boundary_evidence(data,[{"start":2}])
         self.assertIn({"offset_before_start":2,"width":2,"endian":"big","origin_relative":0},rows[0]["matches"])
+    def test_aligned_groups(self):
+        data=b"abcdefghXijklmnop"+b"abcdefghYijklmnop" + b"z"
+        hits=[{"sha256":"a","end":0},{"sha256":"a","end":17}]
+        r=aligned_group_evidence(data,hits)[0]
+        self.assertEqual(r["invariant_runs"],[[0,8],[9,17]])
     def test_noise(self):
         self.assertEqual(scan(b"abc")["candidate_count"],0)
 
