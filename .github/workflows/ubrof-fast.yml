@@ -1,0 +1,36 @@
+name: UBROF fast research
+on:
+  push:
+    branches: [feature/sdcc-build]
+    paths: ['tools/*ubrof*.py', '.github/workflows/ubrof-fast.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  records:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch pinned research inputs
+        run: |
+          git clone --filter=blob:none --no-checkout https://github.com/ms-rtos/ti_cc2530_zstack.git sdk-public
+          git -C sdk-public sparse-checkout init --no-cone
+          git -C sdk-public sparse-checkout set '/Z-Stack 3.0.2/Projects/zstack/Libraries/TI2530DB/bin/EndDevice-Pro.lib'
+          git -C sdk-public checkout 240a9e350de981e10f6f364cf62e3ccf3973c494
+          git clone https://github.com/devbis/sdcc_iar.git sdcc-converter
+          git -C sdcc-converter checkout 181e75662ba181efa9a88251454c9418025a0740
+      - name: Run record research without SDCC build
+        run: |
+          export PYTHONPATH="$GITHUB_WORKSPACE/sdcc-converter/tools"
+          lib="sdk-public/Z-Stack 3.0.2/Projects/zstack/Libraries/TI2530DB/bin/EndDevice-Pro.lib"
+          python3 tools/audit_iar_binary_layout.py "$lib" --out "$RUNNER_TEMP/layout" --limit 8
+          python3 tools/decode_ubrof_prefix.py "$RUNNER_TEMP/layout" --out "$RUNNER_TEMP/layout/record-prefix.json"
+          mkdir -p reports
+          python3 tools/check_ubrof_independence.py "$RUNNER_TEMP/layout" --out reports/independence.json
+          python3 tools/scan_ubrof_boundaries.py "$lib" --out reports/boundaries.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ubrof-fast-aggregate-NOT-FIRMWARE
+          path: reports/*.json
+          if-no-files-found: error
