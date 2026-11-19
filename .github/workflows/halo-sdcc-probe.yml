@@ -29,16 +29,23 @@ jobs:
           echo "$GITHUB_WORKSPACE/sdcc-install/bin" >> "$GITHUB_PATH"
           "$GITHUB_WORKSPACE/sdcc-install/bin/sdcc" --version
           find "$GITHUB_WORKSPACE/sdcc-install" -name mcs51.lib -print
-      - name: Compile and link ABI smoke test (not Zigbee firmware)
+      - name: Native ABI baseline and freestanding IAR ABI link probe (not firmware)
         run: |
           sdcc --print-search-dirs
           mkdir -p probe
           cd probe
           printf 'volatile __xdata unsigned char value;\nvoid main(void){value=42; for(;;){}}\n' > abi_probe.c
-          sdcc -mmcs51 --abi-iar -c abi_probe.c
-          sdcc -mmcs51 --abi-iar abi_probe.rel
-          packihx abi_probe.ihx > abi_probe.hex
-          test -s abi_probe.hex
+          sdcc -mmcs51 abi_probe.c
+          packihx abi_probe.ihx > native-baseline.hex
+          test -s native-baseline.hex
+          # Separate IAR ABI objects; no native runtime or startup.
+          printf 'unsigned char add_pair(unsigned char a, unsigned char b){return a+b;}\n' > iar_callee.c
+          printf 'extern unsigned char add_pair(unsigned char, unsigned char);\nvolatile __xdata unsigned char result;\nvoid probe_entry(void){result=add_pair(19,23);}\n' > iar_caller.c
+          sdcc -mmcs51 --abi-iar -c iar_callee.c
+          sdcc -mmcs51 --abi-iar -c iar_caller.c
+          sdcc -mmcs51 --abi-iar --nostdlib -o iar-link.ihx iar_caller.rel iar_callee.rel
+          packihx iar-link.ihx > iar-link-NOT-BOOTABLE.hex
+          test -s iar-link-NOT-BOOTABLE.hex
       - uses: actions/upload-artifact@v4
         with:
           name: sdcc-abi-probe-NOT-HALO-FIRMWARE
