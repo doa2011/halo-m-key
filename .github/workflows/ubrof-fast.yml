@@ -16,7 +16,7 @@ jobs:
         run: |
           git clone --filter=blob:none --no-checkout https://github.com/ms-rtos/ti_cc2530_zstack.git sdk-public
           git -C sdk-public sparse-checkout init --no-cone
-          git -C sdk-public sparse-checkout set '/Z-Stack 3.0.2/Projects/zstack/Libraries/TI2530DB/bin/EndDevice-Pro.lib'
+          git -C sdk-public sparse-checkout set '/Z-Stack 3.0.2/Projects/zstack/Libraries/TI2530DB/bin/EndDevice-Pro.lib' '/Z-Stack 3.0.2/Projects/zstack/Libraries/TI2530DB/bin/Router-Pro.lib'
           git -C sdk-public checkout 240a9e350de981e10f6f364cf62e3ccf3973c494
           git clone https://github.com/devbis/sdcc_iar.git sdcc-converter
           git -C sdcc-converter checkout 181e75662ba181efa9a88251454c9418025a0740
@@ -29,6 +29,19 @@ jobs:
           mkdir -p reports
           python3 tools/check_ubrof_independence.py "$RUNNER_TEMP/layout" --out reports/independence.json
           python3 tools/scan_ubrof_boundaries.py "$lib" --out reports/boundaries.json
+          router="${lib%/*}/Router-Pro.lib"
+          python3 tools/scan_ubrof_boundaries.py "$router" --out reports/router-boundaries.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          a,b=[json.loads(Path(p).read_text()) for p in ("reports/boundaries.json","reports/router-boundaries.json")]
+          assert a["archive_sha256"] != b["archive_sha256"], "inputs must be distinct"
+          for name,r in (("EndDevice",a),("Router",b)):
+              print(name, "candidates",r["candidate_count"],"unique",r["unique_prefix_count"])
+          common=set(x["sha256"] for x in a["candidates"]) & set(x["sha256"] for x in b["candidates"])
+          print("Cross-library common prefix hashes:",len(common))
+          Path("reports/cross-library.json").write_text(json.dumps({"shared_prefix_count":len(common),"distinct_inputs":True,"member_boundaries_verified":False}))
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: ubrof-fast-aggregate-NOT-FIRMWARE
