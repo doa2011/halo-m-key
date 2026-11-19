@@ -285,6 +285,28 @@ def repeated_interval_audit(data,hits):
              "unique_interval_hashes":len({hashlib.sha256(x).hexdigest() for x in v})}
             for k,v in groups.items()]
 
+def gap_anchor_audit(data,hits):
+    # Inspect long gaps independently, including rejected signature candidates.
+    rows=[]
+    for a,b in zip(hits,hits[1:]):
+        lo,hi=a["end"],b["start"]
+        if hi-lo<100000:
+            continue
+        counts={}
+        p=lo-1
+        while True:
+            p=data.find(b"\xc9\x00\x00\x00",p+1,hi)
+            if p<0:
+                break
+            try:
+                r=decode(data[p: min(hi,p+65536)])
+                key=str(r["counts"].get("0xc9",0))
+            except (ValueError,UnicodeError):
+                key="invalid"
+            counts[key]=counts.get(key,0)+1
+        rows.append({"start":lo,"end":hi,"signature_counts":counts})
+    return rows
+
 def scan(data):
     hits=[]
     p=0
@@ -316,7 +338,7 @@ def scan(data):
             h["following_span"]={"length":len(span),"sha256":hashlib.sha256(span).hexdigest(),"tail_sha256":hashlib.sha256(span[-256:]).hexdigest()}
     return {"archive_size":len(data),"archive_sha256":hashlib.sha256(data).hexdigest(),
             "candidate_count":len(hits),"unique_prefix_count":len({h["sha256"] for h in hits}),
-            "candidates":hits,"candidate_groups":compare_candidate_groups(hits),"preceding_marker_audit":preceding_marker_audit(data,hits),"marker_context":marker_context(data,hits),"marker_layout_hypotheses":marker_layout_hypotheses(data,hits),"marker_family_audit":marker_family_audit(data,hits),"repeated_interval_audit":repeated_interval_audit(data,hits),"anchor_audit":scan_skipped_anchors(data,hits),"aligned_group_evidence":aligned_group_evidence(data,hits),"full_group_divergence":full_group_divergence(data,hits),"boundary_tail_evidence":boundary_tail_evidence(data,hits),"preceding_boundary_evidence":preceding_boundary_evidence(data,hits),"member_boundaries_verified":False,"executable_conversion":False}
+            "candidates":hits,"candidate_groups":compare_candidate_groups(hits),"preceding_marker_audit":preceding_marker_audit(data,hits),"marker_context":marker_context(data,hits),"marker_layout_hypotheses":marker_layout_hypotheses(data,hits),"marker_family_audit":marker_family_audit(data,hits),"repeated_interval_audit":repeated_interval_audit(data,hits),"gap_anchor_audit":gap_anchor_audit(data,hits),"anchor_audit":scan_skipped_anchors(data,hits),"aligned_group_evidence":aligned_group_evidence(data,hits),"full_group_divergence":full_group_divergence(data,hits),"boundary_tail_evidence":boundary_tail_evidence(data,hits),"preceding_boundary_evidence":preceding_boundary_evidence(data,hits),"member_boundaries_verified":False,"executable_conversion":False}
 
 def attr(k,v):
     b=len(k).to_bytes(4,"big")+k+len(v).to_bytes(4,"big")+v
@@ -406,6 +428,9 @@ class Tests(unittest.TestCase):
         r=repeated_interval_audit(data,hits)[0]
         self.assertEqual(r["lengths"],[20,20])
         self.assertEqual(r["unique_interval_hashes"],1)
+    def test_gap_anchor(self):
+        data=b"x"*100001
+        self.assertEqual(gap_anchor_audit(data,[{"end":0},{"start":len(data)}])[0]["signature_counts"],{})
     def test_noise(self):
         self.assertEqual(scan(b"abc")["candidate_count"],0)
 
