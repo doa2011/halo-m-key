@@ -172,6 +172,28 @@ def full_group_divergence(data,hits):
                      "remaining_lengths":[len(s)-first for s in spans]})
     return rows
 
+def boundary_tail_evidence(data,hits):
+    # Pairwise common prefix: identify whether a single outlier hides longer
+    # shared structure. Search for repeated tails immediately before next starts.
+    groups={}
+    for i,h in enumerate(hits):
+        end=hits[i+1]["start"] if i+1<len(hits) else len(data)
+        groups.setdefault(h["sha256"],[]).append((h["end"],end))
+    rows=[]
+    for digest,spans in groups.items():
+        if len(spans)<2:
+            continue
+        pairs=[]
+        for i,(a,b) in enumerate(spans):
+            for c,d in spans[i+1:]:
+                n=min(b-a,d-c)
+                prefix=next((k for k in range(n) if data[a+k]!=data[c+k]),n)
+                suffix=next((k for k in range(n-prefix) if data[b-1-k]!=data[d-1-k]),n-prefix)
+                pairs.append({"starts":[a,c],"lengths":[b-a,d-c],
+                              "common_prefix":prefix,"nonoverlapping_suffix":suffix})
+        rows.append({"prefix_sha256":digest,"pairs":pairs})
+    return rows
+
 def scan(data):
     hits=[]
     p=0
@@ -203,7 +225,7 @@ def scan(data):
             h["following_span"]={"length":len(span),"sha256":hashlib.sha256(span).hexdigest(),"tail_sha256":hashlib.sha256(span[-256:]).hexdigest()}
     return {"archive_size":len(data),"archive_sha256":hashlib.sha256(data).hexdigest(),
             "candidate_count":len(hits),"unique_prefix_count":len({h["sha256"] for h in hits}),
-            "candidates":hits,"candidate_groups":compare_candidate_groups(hits),"anchor_audit":scan_skipped_anchors(data,hits),"aligned_group_evidence":aligned_group_evidence(data,hits),"full_group_divergence":full_group_divergence(data,hits),"preceding_boundary_evidence":preceding_boundary_evidence(data,hits),"member_boundaries_verified":False,"executable_conversion":False}
+            "candidates":hits,"candidate_groups":compare_candidate_groups(hits),"anchor_audit":scan_skipped_anchors(data,hits),"aligned_group_evidence":aligned_group_evidence(data,hits),"full_group_divergence":full_group_divergence(data,hits),"boundary_tail_evidence":boundary_tail_evidence(data,hits),"preceding_boundary_evidence":preceding_boundary_evidence(data,hits),"member_boundaries_verified":False,"executable_conversion":False}
 
 def attr(k,v):
     b=len(k).to_bytes(4,"big")+k+len(v).to_bytes(4,"big")+v
@@ -258,6 +280,12 @@ class Tests(unittest.TestCase):
         row=full_group_divergence(data,hits)[0]
         self.assertEqual(row["common_prefix_bytes"],3)
         self.assertTrue(row["divergence_observed"])
+    def test_boundary_tail(self):
+        data=b"abcXtail"+b"abcYYtail"
+        hits=[{"sha256":"a","start":0,"end":0},{"sha256":"a","start":8,"end":8}]
+        pair=boundary_tail_evidence(data,hits)[0]["pairs"][0]
+        self.assertEqual(pair["common_prefix"],3)
+        self.assertEqual(pair["nonoverlapping_suffix"],4)
     def test_noise(self):
         self.assertEqual(scan(b"abc")["candidate_count"],0)
 
