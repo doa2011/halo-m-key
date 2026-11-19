@@ -106,6 +106,28 @@ def scan_skipped_anchors(data,hits):
             offsets.append(p)
     return {"counts":counts,"validated_outside_offsets":offsets}
 
+def preceding_boundary_evidence(data,hits):
+    # Search for length fields immediately before each candidate start.
+    # Compare against candidate-to-candidate distances, without assuming members.
+    rows=[]
+    for i,h in enumerate(hits):
+        start=h["start"]
+        end=hits[i+1]["start"] if i+1<len(hits) else len(data)
+        matches=[]
+        for offset in range(1,min(64,start)+1):
+            for width in (2,4):
+                if offset<width:
+                    continue
+                field=start-offset
+                for endian in ("big","little"):
+                    value=int.from_bytes(data[field:field+width],endian)
+                    for origin in (field,field+width,start):
+                        if value>0 and origin+value==end:
+                            matches.append({"offset_before_start":offset,"width":width,
+                                            "endian":endian,"origin_relative":origin-start})
+        rows.append({"start":start,"next_candidate":end,"matches":matches})
+    return rows
+
 def scan(data):
     hits=[]
     p=0
@@ -137,7 +159,7 @@ def scan(data):
             h["following_span"]={"length":len(span),"sha256":hashlib.sha256(span).hexdigest(),"tail_sha256":hashlib.sha256(span[-256:]).hexdigest()}
     return {"archive_size":len(data),"archive_sha256":hashlib.sha256(data).hexdigest(),
             "candidate_count":len(hits),"unique_prefix_count":len({h["sha256"] for h in hits}),
-            "candidates":hits,"candidate_groups":compare_candidate_groups(hits),"anchor_audit":scan_skipped_anchors(data,hits),"member_boundaries_verified":False,"executable_conversion":False}
+            "candidates":hits,"candidate_groups":compare_candidate_groups(hits),"anchor_audit":scan_skipped_anchors(data,hits),"preceding_boundary_evidence":preceding_boundary_evidence(data,hits),"member_boundaries_verified":False,"executable_conversion":False}
 
 def attr(k,v):
     b=len(k).to_bytes(4,"big")+k+len(v).to_bytes(4,"big")+v
@@ -177,6 +199,10 @@ class Tests(unittest.TestCase):
         r=scan(a+b"\xc1"+attr(b"e",b"f"))
         self.assertEqual(r["anchor_audit"]["counts"]["inside_prefix"],1)
         self.assertEqual(r["anchor_audit"]["counts"]["validated_outside"],1)
+    def test_preceding_boundary(self):
+        data=b"\x00\x08"+b"x"*8
+        rows=preceding_boundary_evidence(data,[{"start":2}])
+        self.assertIn({"offset_before_start":2,"width":2,"endian":"big","origin_relative":0},rows[0]["matches"])
     def test_noise(self):
         self.assertEqual(scan(b"abc")["candidate_count"],0)
 
