@@ -65,6 +65,20 @@ def examine_following(data, start, limit):
                     "tag_histogram":tags})
     return results
 
+def compare_candidate_groups(hits):
+    groups={}
+    for h in hits:
+        groups.setdefault(h["sha256"],[]).append(h)
+    rows=[]
+    for digest, members in groups.items():
+        # Compare entire candidate-to-candidate spans, not just fixed windows.
+        spans=[m["following_span"] for m in members if "following_span" in m]
+        rows.append({"prefix_sha256":digest,"count":len(members),
+                     "following_lengths":sorted({s["length"] for s in spans}),
+                     "unique_following_hashes":len({s["sha256"] for s in spans}),
+                     "unique_tail_hashes":len({s["tail_sha256"] for s in spans if "tail_sha256" in s})})
+    return rows
+
 def scan(data):
     hits=[]
     p=0
@@ -92,9 +106,11 @@ def scan(data):
             h["following_hypotheses"] = examine_following(data,h["end"],limit)
             h["c1_local_evidence"] = c1_local_evidence(data,h["end"],limit)
             h["short_record_evidence"] = short_record_evidence(data,h["end"],limit)
+            span=data[h["end"]:limit]
+            h["following_span"]={"length":len(span),"sha256":hashlib.sha256(span).hexdigest(),"tail_sha256":hashlib.sha256(span[-256:]).hexdigest()}
     return {"archive_size":len(data),"archive_sha256":hashlib.sha256(data).hexdigest(),
             "candidate_count":len(hits),"unique_prefix_count":len({h["sha256"] for h in hits}),
-            "candidates":hits,"member_boundaries_verified":False,"executable_conversion":False}
+            "candidates":hits,"candidate_groups":compare_candidate_groups(hits),"member_boundaries_verified":False,"executable_conversion":False}
 
 def attr(k,v):
     b=len(k).to_bytes(4,"big")+k+len(v).to_bytes(4,"big")+v
@@ -124,6 +140,11 @@ class Tests(unittest.TestCase):
         r=short_record_evidence(data,0,len(data))
         self.assertIn(8,r["validated_attribute_anchors"])
         self.assertEqual(r["prefix_hashes"]["8"],hashlib.sha256(data[:8]).hexdigest())
+    def test_candidate_groups(self):
+        a=attr(b"a",b"b")+attr(b"c",b"d")
+        r=scan(a+b"\xc1"+a+b"\xc1")
+        self.assertEqual(r["candidate_groups"][0]["count"],2)
+        self.assertEqual(r["candidate_groups"][0]["unique_following_hashes"],1)
     def test_noise(self):
         self.assertEqual(scan(b"abc")["candidate_count"],0)
 
