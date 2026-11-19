@@ -71,9 +71,22 @@ jobs:
           for lib in Router-Pro EndDevice-Pro; do
             test -s "$libs/$lib.lib"
             sha256sum "$libs/$lib.lib"
-            python3 sdcc-converter/tools/iar2sdcc/cli.py scan "$libs/$lib.lib" > "$RUNNER_TEMP/$lib-scan.txt"
-            wc -c "$RUNNER_TEMP/$lib-scan.txt"
+            python3 sdcc-converter/tools/iar2sdcc/cli.py scan --json "$libs/$lib.lib" | tee "$RUNNER_TEMP/$lib-scan.json"
+            python3 -m json.tool "$RUNNER_TEMP/$lib-scan.json" >/dev/null
           done
+      - name: Collect SDK diagnostics
+        if: always()
+        run: |
+          mkdir -p diagnostics
+          cp "$RUNNER_TEMP/"*scan.json diagnostics/ 2>/dev/null || true
+          find "sdk-public/Z-Stack 3.0.2/Projects/zstack/HomeAutomation/AcoinfoZigBeeSampleLight/CC2530DB" -maxdepth 1 -name "*.ewp" -print > diagnostics/available-projects.txt
+          printf "SDK commit: 240a9e350de981e10f6f364cf62e3ccf3973c494\\n" > diagnostics/SDK-INFO.txt
+          sha256sum "sdk-public/Z-Stack 3.0.2/Projects/zstack/Libraries/TI2530DB/bin/"*.lib >> diagnostics/SDK-INFO.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdcc-sdk-library-diagnostics-NOT-FIRMWARE
+          path: diagnostics/
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         with:
           name: sdcc-abi-probe-NOT-HALO-FIRMWARE
