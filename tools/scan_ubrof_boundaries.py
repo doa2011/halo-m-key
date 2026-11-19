@@ -194,6 +194,29 @@ def boundary_tail_evidence(data,hits):
         rows.append({"prefix_sha256":digest,"pairs":pairs})
     return rows
 
+def preceding_marker_audit(data,hits):
+    # Check whether the shared tail is actually the next candidate's header.
+    groups={}
+    for h in hits:
+        p=h["start"]
+        if p>=17:
+            groups.setdefault(data[p-17:p],[]).append(p)
+    rows=[]
+    for marker,expected in groups.items():
+        if len(expected)<2:
+            continue
+        occurrences=[]
+        p=-1
+        while True:
+            p=data.find(marker,p+1)
+            if p<0:
+                break
+            occurrences.append(p+17)
+        rows.append({"sha256":hashlib.sha256(marker).hexdigest(),
+                     "candidate_starts":expected,"occurrence_count":len(occurrences),
+                     "other_offsets":sorted(set(occurrences)-set(expected))})
+    return rows
+
 def scan(data):
     hits=[]
     p=0
@@ -225,7 +248,7 @@ def scan(data):
             h["following_span"]={"length":len(span),"sha256":hashlib.sha256(span).hexdigest(),"tail_sha256":hashlib.sha256(span[-256:]).hexdigest()}
     return {"archive_size":len(data),"archive_sha256":hashlib.sha256(data).hexdigest(),
             "candidate_count":len(hits),"unique_prefix_count":len({h["sha256"] for h in hits}),
-            "candidates":hits,"candidate_groups":compare_candidate_groups(hits),"anchor_audit":scan_skipped_anchors(data,hits),"aligned_group_evidence":aligned_group_evidence(data,hits),"full_group_divergence":full_group_divergence(data,hits),"boundary_tail_evidence":boundary_tail_evidence(data,hits),"preceding_boundary_evidence":preceding_boundary_evidence(data,hits),"member_boundaries_verified":False,"executable_conversion":False}
+            "candidates":hits,"candidate_groups":compare_candidate_groups(hits),"preceding_marker_audit":preceding_marker_audit(data,hits),"anchor_audit":scan_skipped_anchors(data,hits),"aligned_group_evidence":aligned_group_evidence(data,hits),"full_group_divergence":full_group_divergence(data,hits),"boundary_tail_evidence":boundary_tail_evidence(data,hits),"preceding_boundary_evidence":preceding_boundary_evidence(data,hits),"member_boundaries_verified":False,"executable_conversion":False}
 
 def attr(k,v):
     b=len(k).to_bytes(4,"big")+k+len(v).to_bytes(4,"big")+v
@@ -286,6 +309,12 @@ class Tests(unittest.TestCase):
         pair=boundary_tail_evidence(data,hits)[0]["pairs"][0]
         self.assertEqual(pair["common_prefix"],3)
         self.assertEqual(pair["nonoverlapping_suffix"],4)
+    def test_preceding_marker(self):
+        marker=b"abcdefghijklmnopq"
+        data=marker+b"X"+marker+b"Y"+marker+b"Z"
+        rows=preceding_marker_audit(data,[{"start":17},{"start":35}])
+        self.assertEqual(rows[0]["occurrence_count"],3)
+        self.assertEqual(rows[0]["other_offsets"],[53])
     def test_noise(self):
         self.assertEqual(scan(b"abc")["candidate_count"],0)
 
