@@ -8,6 +8,30 @@ from pathlib import Path
 import unittest
 from decode_ubrof_prefix import decode
 
+def examine_following(data, start, limit):
+    # Compare hypotheses against candidate chain boundaries; do not select a format.
+    results = []
+    for width in (1, 2, 3, 4):
+        for endian in ("big", "little"):
+            for includes_header in (False, True):
+                p = start
+                count = 0
+                tags = {}
+                while p + 1 + width <= limit and count < 100000:
+                    tag = data[p]
+                    size = int.from_bytes(data[p+1:p+1+width], endian)
+                    end = p + size if includes_header else p + 1 + width + size
+                    if end < p+1+width or end > limit:
+                        break
+                    tags[hex(tag)] = tags.get(hex(tag), 0) + 1
+                    count += 1
+                    p = end
+                results.append({"width":width,"endian":endian,
+                    "includes_header":includes_header,"records":count,
+                    "covered_bytes":p-start,"exact_end":p==limit,
+                    "tag_histogram":tags})
+    return results
+
 def scan(data):
     hits=[]
     p=0
@@ -29,6 +53,10 @@ def scan(data):
             p=end
         else:
             p+=1
+    for i,h in enumerate(hits):
+        if h["next_tag"] == "0xc1":
+            limit = hits[i+1]["start"] if i+1<len(hits) else len(data)
+            h["following_hypotheses"] = examine_following(data,h["end"],limit)
     return {"archive_size":len(data),"archive_sha256":hashlib.sha256(data).hexdigest(),
             "candidate_count":len(hits),"unique_prefix_count":len({h["sha256"] for h in hits}),
             "candidates":hits,"member_boundaries_verified":False,"executable_conversion":False}
@@ -45,6 +73,12 @@ class Tests(unittest.TestCase):
         self.assertEqual(r["unique_prefix_count"],1)
         self.assertEqual(r["candidates"][0]["start"],3)
         self.assertFalse(r["member_boundaries_verified"])
+    def test_following_hypothesis(self):
+        data=bytes.fromhex("c100020102c2000103")
+        r=examine_following(data,0,len(data))
+        match=next(x for x in r if x["width"]==2 and x["endian"]=="big" and not x["includes_header"])
+        self.assertEqual(match["records"],2)
+        self.assertTrue(match["exact_end"])
     def test_noise(self):
         self.assertEqual(scan(b"abc")["candidate_count"],0)
 
