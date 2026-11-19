@@ -62,6 +62,18 @@ jobs:
           python3 sdcc-converter/tools/iar2sdcc/cli.py --help
           python3 sdcc-converter/tools/iar2sdcc/cli.py scan --help
           python3 sdcc-converter/tools/iar2sdcc/cli.py convert --help
+      - name: Scan public Z-Stack SDK libraries (research only)
+        run: |
+          git clone https://github.com/ms-rtos/ti_cc2530_zstack.git sdk-public
+          git -C sdk-public checkout 240a9e350de981e10f6f364cf62e3ccf3973c494
+          sdk="$GITHUB_WORKSPACE/sdk-public/Z-Stack 3.0.2"
+          libs="$sdk/Projects/zstack/Libraries/TI2530DB/bin"
+          for lib in Router-Pro EndDevice-Pro; do
+            test -s "$libs/$lib.lib"
+            sha256sum "$libs/$lib.lib"
+            python3 sdcc-converter/tools/iar2sdcc/cli.py scan "$libs/$lib.lib" > "$RUNNER_TEMP/$lib-scan.txt"
+            wc -c "$RUNNER_TEMP/$lib-scan.txt"
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: sdcc-abi-probe-NOT-HALO-FIRMWARE
