@@ -270,6 +270,21 @@ def marker_family_audit(data,hits):
                      "next_is_c9":end<len(data) and data[end]==0xc9})
     return rows
 
+def repeated_interval_audit(data,hits):
+    # Compare entire intervals from marker to marker, not just decoded prefixes.
+    groups={}
+    for a,b in zip(hits,hits[1:]):
+        start=a["start"]-17
+        end=b["start"]-17
+        if start<0:
+            continue
+        span=data[start:end]
+        groups.setdefault(a["sha256"],[]).append(span)
+    return [{"prefix_sha256":k,"samples":len(v),
+             "lengths":[len(x) for x in v],
+             "unique_interval_hashes":len({hashlib.sha256(x).hexdigest() for x in v})}
+            for k,v in groups.items()]
+
 def scan(data):
     hits=[]
     p=0
@@ -301,7 +316,7 @@ def scan(data):
             h["following_span"]={"length":len(span),"sha256":hashlib.sha256(span).hexdigest(),"tail_sha256":hashlib.sha256(span[-256:]).hexdigest()}
     return {"archive_size":len(data),"archive_sha256":hashlib.sha256(data).hexdigest(),
             "candidate_count":len(hits),"unique_prefix_count":len({h["sha256"] for h in hits}),
-            "candidates":hits,"candidate_groups":compare_candidate_groups(hits),"preceding_marker_audit":preceding_marker_audit(data,hits),"marker_context":marker_context(data,hits),"marker_layout_hypotheses":marker_layout_hypotheses(data,hits),"marker_family_audit":marker_family_audit(data,hits),"anchor_audit":scan_skipped_anchors(data,hits),"aligned_group_evidence":aligned_group_evidence(data,hits),"full_group_divergence":full_group_divergence(data,hits),"boundary_tail_evidence":boundary_tail_evidence(data,hits),"preceding_boundary_evidence":preceding_boundary_evidence(data,hits),"member_boundaries_verified":False,"executable_conversion":False}
+            "candidates":hits,"candidate_groups":compare_candidate_groups(hits),"preceding_marker_audit":preceding_marker_audit(data,hits),"marker_context":marker_context(data,hits),"marker_layout_hypotheses":marker_layout_hypotheses(data,hits),"marker_family_audit":marker_family_audit(data,hits),"repeated_interval_audit":repeated_interval_audit(data,hits),"anchor_audit":scan_skipped_anchors(data,hits),"aligned_group_evidence":aligned_group_evidence(data,hits),"full_group_divergence":full_group_divergence(data,hits),"boundary_tail_evidence":boundary_tail_evidence(data,hits),"preceding_boundary_evidence":preceding_boundary_evidence(data,hits),"member_boundaries_verified":False,"executable_conversion":False}
 
 def attr(k,v):
     b=len(k).to_bytes(4,"big")+k+len(v).to_bytes(4,"big")+v
@@ -385,6 +400,12 @@ class Tests(unittest.TestCase):
         self.assertEqual([r["length"] for r in rows],[5,2])
         self.assertTrue(rows[0]["ends_at_candidate"])
         self.assertFalse(rows[1]["ends_at_candidate"])
+    def test_repeated_interval(self):
+        data=b"a"*20+b"a"*20+b"b"*20
+        hits=[{"start":17+i*20,"sha256":"x"} for i in range(3)]
+        r=repeated_interval_audit(data,hits)[0]
+        self.assertEqual(r["lengths"],[20,20])
+        self.assertEqual(r["unique_interval_hashes"],1)
     def test_noise(self):
         self.assertEqual(scan(b"abc")["candidate_count"],0)
 
