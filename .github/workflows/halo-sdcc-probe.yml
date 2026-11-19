@@ -84,7 +84,7 @@ jobs:
           sha256sum "sdk-public/Z-Stack 3.0.2/Projects/zstack/Libraries/TI2530DB/bin/"*.lib >> diagnostics/SDK-INFO.txt
       - name: Prepare Halo FreePad EndDevice source
         run: |
-          git clone --recurse-submodules https://github.com/diyruz/freepad.git freepad
+          git -c url."https://github.com/".insteadOf="git@github.com:" clone --recurse-submodules https://github.com/diyruz/freepad.git freepad
           python3 firmware/halo/prepare_halo_freepad.py freepad
           python3 tools/check_halo_port.py freepad
           mkdir -p halo-source-diagnostics
@@ -110,11 +110,13 @@ jobs:
           path: halo-source-diagnostics/
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: sdcc-sdk-library-diagnostics-NOT-FIRMWARE
           path: diagnostics/
           if-no-files-found: warn
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: sdcc-abi-probe-NOT-HALO-FIRMWARE
           path: probe/
