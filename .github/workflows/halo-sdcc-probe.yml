@@ -162,6 +162,22 @@ jobs:
           assert summary["parsed_modules"] > 0, "No IAR modules parsed"
           assert summary["firmware_link_allowed"] is False
           PY
+      - name: Preserve real IAR module bytes and map binary layout
+        if: always()
+        run: |
+          mkdir -p conversion-audit/binary-layout
+          export PYTHONPATH="$GITHUB_WORKSPACE/sdcc-converter/tools"
+          python3 tools/audit_iar_binary_layout.py \
+            "sdk-public/Z-Stack 3.0.2/Projects/zstack/Libraries/TI2530DB/bin/EndDevice-Pro.lib" \
+            --out conversion-audit/binary-layout --limit 8
+      - name: Upload raw IAR binary layout evidence (not firmware)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iar-enddevice-binary-layout-NOT-FIRMWARE
+          path: |
+            conversion-audit/binary-layout/
+          if-no-files-found: warn
       - name: Extract complete Halo PM3 project inventory
         if: always()
         run: |
