@@ -103,6 +103,64 @@ jobs:
                           print(n, [x.text for x in opt.findall(".//state")])
           Path("halo-source-diagnostics/profile.txt").write_text("HALO_M_KEY_PM3 extracted from patched FreePad GenericApp.ewp\\n")
           PY
+      - name: Audit real EndDevice IAR object conversion (not firmware)
+        run: |
+          mkdir -p conversion-audit
+          export PYTHONPATH="$GITHUB_WORKSPACE/sdcc-converter/tools"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from iar2sdcc.archive import extract_module_spans
+          from iar2sdcc.object_parser import parse_iar_object_bytes
+          from iar2sdcc.rel_emitter import emit_converted_rel
+          lib=Path("sdk-public/Z-Stack 3.0.2/Projects/zstack/Libraries/TI2530DB/bin/EndDevice-Pro.lib")
+          data=lib.read_bytes()
+          out=Path("conversion-audit")
+          spans=list(extract_module_spans(data))
+          assert spans, "No IAR modules found"
+          report=[]
+          for i, span in enumerate(spans):
+              record={"module":span.name}
+              try:
+                  obj=parse_iar_object_bytes(data[span.start_offset:span.end_offset], source_path=str(lib.resolve())+"!"+span.name, module_name_hint=span.name)
+                  record.update(exports=sum(s.binding=="public" for s in obj.symbols), relocations=len(obj.relocations), issues=obj.issues)
+                  if record["exports"] and not any(x.get("conversion_mode") for x in report):
+                      rel=out/f"sample-{i}.rel"
+                      meta=out/f"sample-{i}.json"
+                      emit_converted_rel(obj, rel, meta, source_library=str(lib.resolve()))
+                      assert rel.stat().st_size
+                      record["conversion_mode"]=json.loads(meta.read_text())["conversion_mode"]
+              except Exception as exc:
+                  record["error"]=str(exc)
+              report.append(record)
+          (out/"module-audit.json").write_text(json.dumps(report,indent=2))
+          print("Modules:",len(report),"parse/conversion errors:",sum("error" in x for x in report))
+          print("Sample conversion modes:",[x["conversion_mode"] for x in report if "conversion_mode" in x])
+          print("BLOCKER: upstream emitter produces prototype placeholders, not executable TI code")
+          assert any(x.get("conversion_mode") for x in report), "No sample REL emitted"
+          PY
+      - name: Extract complete Halo PM3 project inventory
+        if: always()
+        run: |
+          mkdir -p conversion-audit
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          import json
+          from pathlib import Path
+          root=ET.parse("freepad/CC2530DB/GenericApp.ewp").getroot()
+          cfg=next(c for c in root.findall("./configuration") if c.findtext("name")=="HALO_M_KEY_PM3")
+          payload={"configuration":ET.tostring(cfg,encoding="unicode"),"files":[ET.tostring(f,encoding="unicode") for f in root.findall(".//file")]}
+          Path("conversion-audit/pm3-project-inventory.json").write_text(json.dumps(payload,indent=2))
+          print("Project file entries:",len(payload["files"]))
+          PY
+      - name: Upload conversion metadata audit (not firmware)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: halo-conversion-audit-NOT-FIRMWARE
+          path: |
+            conversion-audit/*.json
+          if-no-files-found: warn
       - name: Upload Halo source adaptation diagnostics
         uses: actions/upload-artifact@v4
         with:
