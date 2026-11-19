@@ -249,6 +249,27 @@ def marker_layout_hypotheses(data,hits):
                      "framing_matches":matches})
     return rows
 
+def marker_family_audit(data,hits):
+    # Search the fixed ten-byte prefix independently of the length and payload.
+    if not hits or hits[0]["start"]<17:
+        return []
+    marker=data[hits[0]["start"]-17:hits[0]["start"]-7]
+    rows=[]
+    p=-1
+    known={h["start"] for h in hits}
+    while True:
+        p=data.find(marker,p+1)
+        if p<0:
+            break
+        if p+12>len(data):
+            continue
+        n=int.from_bytes(data[p+10:p+12],"big")
+        end=p+12+n
+        rows.append({"start":p,"length":n,"in_bounds":end<=len(data),
+                     "ends_at_candidate":end in known,
+                     "next_is_c9":end<len(data) and data[end]==0xc9})
+    return rows
+
 def scan(data):
     hits=[]
     p=0
@@ -280,7 +301,7 @@ def scan(data):
             h["following_span"]={"length":len(span),"sha256":hashlib.sha256(span).hexdigest(),"tail_sha256":hashlib.sha256(span[-256:]).hexdigest()}
     return {"archive_size":len(data),"archive_sha256":hashlib.sha256(data).hexdigest(),
             "candidate_count":len(hits),"unique_prefix_count":len({h["sha256"] for h in hits}),
-            "candidates":hits,"candidate_groups":compare_candidate_groups(hits),"preceding_marker_audit":preceding_marker_audit(data,hits),"marker_context":marker_context(data,hits),"marker_layout_hypotheses":marker_layout_hypotheses(data,hits),"anchor_audit":scan_skipped_anchors(data,hits),"aligned_group_evidence":aligned_group_evidence(data,hits),"full_group_divergence":full_group_divergence(data,hits),"boundary_tail_evidence":boundary_tail_evidence(data,hits),"preceding_boundary_evidence":preceding_boundary_evidence(data,hits),"member_boundaries_verified":False,"executable_conversion":False}
+            "candidates":hits,"candidate_groups":compare_candidate_groups(hits),"preceding_marker_audit":preceding_marker_audit(data,hits),"marker_context":marker_context(data,hits),"marker_layout_hypotheses":marker_layout_hypotheses(data,hits),"marker_family_audit":marker_family_audit(data,hits),"anchor_audit":scan_skipped_anchors(data,hits),"aligned_group_evidence":aligned_group_evidence(data,hits),"full_group_divergence":full_group_divergence(data,hits),"boundary_tail_evidence":boundary_tail_evidence(data,hits),"preceding_boundary_evidence":preceding_boundary_evidence(data,hits),"member_boundaries_verified":False,"executable_conversion":False}
 
 def attr(k,v):
     b=len(k).to_bytes(4,"big")+k+len(v).to_bytes(4,"big")+v
@@ -357,6 +378,13 @@ class Tests(unittest.TestCase):
         m=bytes([193,15])+b"a"*15
         r=marker_layout_hypotheses(m,[{"start":17}])[0]
         self.assertIn([1,1,"big",15],r["framing_matches"])
+    def test_marker_family(self):
+        prefix=b"abcdefghij"
+        data=prefix+b"\x00\x05"+b"12345"+b"\xc9"+prefix+b"\x00\x02"+b"ab"
+        rows=marker_family_audit(data,[{"start":17}])
+        self.assertEqual([r["length"] for r in rows],[5,2])
+        self.assertTrue(rows[0]["ends_at_candidate"])
+        self.assertFalse(rows[1]["ends_at_candidate"])
     def test_noise(self):
         self.assertEqual(scan(b"abc")["candidate_count"],0)
 
