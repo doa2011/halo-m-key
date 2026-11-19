@@ -42,6 +42,26 @@ jobs:
           print("Cross-library common prefix hashes:",len(common))
           Path("reports/cross-library.json").write_text(json.dumps({"shared_prefix_count":len(common),"distinct_inputs":True,"member_boundaries_verified":False}))
           PY
+          python3 - "$lib" "$router" <<'PY'
+          import sys,json,hashlib
+          from pathlib import Path
+          a,b=[json.loads(Path(p).read_text()) for p in ("reports/boundaries.json","reports/router-boundaries.json")]
+          da,db=[Path(p).read_bytes() for p in sys.argv[1:]]
+          rows=[]
+          for x in a["candidates"]:
+              for y in b["candidates"]:
+                  if x["sha256"]!=y["sha256"]:
+                      continue
+                  u=da[x["end"]:x["end"]+65536]
+                  v=db[y["end"]:y["end"]+65536]
+                  n=min(len(u),len(v))
+                  first=next((i for i in range(n) if u[i]!=v[i]),n)
+                  rows.append({"enddevice_offset":x["end"],"router_offset":y["end"],"compared_bytes":n,"common_bytes":first})
+          assert rows
+          print("Cross-library pair count:",len(rows))
+          print("Cross-library common following lengths:",sorted(set(r["common_bytes"] for r in rows)))
+          Path("reports/cross-library-following.json").write_text(json.dumps({"pairs":rows,"member_boundaries_verified":False,"executable_conversion":False}))
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: ubrof-fast-aggregate-NOT-FIRMWARE
