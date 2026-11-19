@@ -71,6 +71,40 @@ jobs:
           print("Standalone object size:",r["archive_size"])
           print("Standalone next tags:",[x["next_tag"] for x in r["candidates"]])
           PY
+          # 独立对象：检验 C1 后是否存在其他可严格解析的属性锚点。
+          python3 - "${lib%/*}/ecc.r51" <<'PY'
+          import sys,json
+          from pathlib import Path
+          sys.path.insert(0,"tools")
+          from decode_ubrof_prefix import decode
+          def anchors(data,start):
+              rows=[]
+              for p in range(start,len(data)-4):
+                  if data[p:p+4]!=b"\xc9\x00\x00\x00":
+                      continue
+                  try:
+                      r=decode(data[p:])
+                  except (ValueError,UnicodeError):
+                      continue
+                  if r["start"]==0 and r["counts"].get("0xc9",0):
+                      rows.append({"offset":p,"end":p+r["stop"],"counts":r["counts"]})
+              return rows
+          def attr(k,v):
+              body=len(k).to_bytes(4,"big")+k+len(v).to_bytes(4,"big")+v
+              return b"\xc9"+len(body).to_bytes(4,"big")+body
+          sample=b"noise"+attr(b"a",b"b")
+          assert anchors(sample,0)[0]["offset"]==5
+          assert not anchors(sample,6)
+          assert not anchors(b"\xc9\x00\x00\x00\xff",0)
+          data=Path(sys.argv[1]).read_bytes()
+          r=decode(data)
+          rows=anchors(data,r["stop"]+1)
+          report={"stop":r["stop"],"size":len(data),"strict_suffix_anchors":rows,
+                  "record_semantics_verified":False,"executable_conversion":False}
+          Path("reports/ecc-suffix-anchors.json").write_text(json.dumps(report))
+          print("Standalone suffix strict anchors:",len(rows))
+          print("Standalone suffix anchor offsets:",[x["offset"] for x in rows])
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: ubrof-fast-aggregate-NOT-FIRMWARE
