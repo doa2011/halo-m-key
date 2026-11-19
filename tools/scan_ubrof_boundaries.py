@@ -79,6 +79,33 @@ def compare_candidate_groups(hits):
                      "unique_tail_hashes":len({s["tail_sha256"] for s in spans if "tail_sha256" in s})})
     return rows
 
+def scan_skipped_anchors(data,hits):
+    # The greedy scanner skips nested starts; independently count all signatures.
+    known={h["start"] for h in hits}
+    counts={"signatures":0,"inside_prefix":0,"outside_prefix":0,
+            "validated_outside":0}
+    offsets=[]
+    p=-1
+    while True:
+        p=data.find(b"\xc9\x00\x00\x00",p+1)
+        if p<0:
+            break
+        counts["signatures"]+=1
+        if p in known:
+            continue
+        if any(h["start"]<p<h["end"] for h in hits):
+            counts["inside_prefix"]+=1
+            continue
+        counts["outside_prefix"]+=1
+        try:
+            r=decode(data[p:p+65536])
+        except (ValueError,UnicodeError):
+            continue
+        if r["start"]==0 and r["counts"].get("0xc9",0)>=1:
+            counts["validated_outside"]+=1
+            offsets.append(p)
+    return {"counts":counts,"validated_outside_offsets":offsets}
+
 def scan(data):
     hits=[]
     p=0
@@ -110,7 +137,7 @@ def scan(data):
             h["following_span"]={"length":len(span),"sha256":hashlib.sha256(span).hexdigest(),"tail_sha256":hashlib.sha256(span[-256:]).hexdigest()}
     return {"archive_size":len(data),"archive_sha256":hashlib.sha256(data).hexdigest(),
             "candidate_count":len(hits),"unique_prefix_count":len({h["sha256"] for h in hits}),
-            "candidates":hits,"candidate_groups":compare_candidate_groups(hits),"member_boundaries_verified":False,"executable_conversion":False}
+            "candidates":hits,"candidate_groups":compare_candidate_groups(hits),"anchor_audit":scan_skipped_anchors(data,hits),"member_boundaries_verified":False,"executable_conversion":False}
 
 def attr(k,v):
     b=len(k).to_bytes(4,"big")+k+len(v).to_bytes(4,"big")+v
@@ -145,6 +172,11 @@ class Tests(unittest.TestCase):
         r=scan(a+b"\xc1"+a+b"\xc1")
         self.assertEqual(r["candidate_groups"][0]["count"],2)
         self.assertEqual(r["candidate_groups"][0]["unique_following_hashes"],1)
+    def test_anchor_audit(self):
+        a=attr(b"a",b"b")+attr(b"c",b"d")
+        r=scan(a+b"\xc1"+attr(b"e",b"f"))
+        self.assertEqual(r["anchor_audit"]["counts"]["inside_prefix"],1)
+        self.assertEqual(r["anchor_audit"]["counts"]["validated_outside"],1)
     def test_noise(self):
         self.assertEqual(scan(b"abc")["candidate_count"],0)
 
