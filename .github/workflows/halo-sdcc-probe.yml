@@ -173,14 +173,15 @@ jobs:
       - name: Decode verified UBROF record prefix
         run: |
           python3 tools/decode_ubrof_prefix.py conversion-audit/binary-layout --out conversion-audit/binary-layout/record-prefix.json
-      - name: Upload raw IAR binary layout evidence (not firmware)
-        if: always()
+      - name: Verify independence of heuristic UBROF samples
+        run: |
+          python3 tools/check_ubrof_independence.py conversion-audit/binary-layout --out conversion-audit/prefix-independence.json
+      - name: Upload UBROF aggregate evidence only (not firmware)
         uses: actions/upload-artifact@v4
         with:
-          name: iar-enddevice-binary-layout-NOT-FIRMWARE
-          path: |
-            conversion-audit/binary-layout/
-          if-no-files-found: warn
+          name: iar-enddevice-prefix-statistics-NOT-FIRMWARE
+          path: conversion-audit/prefix-independence.json
+          if-no-files-found: error
       - name: Extract complete Halo PM3 project inventory
         if: always()
         run: |
