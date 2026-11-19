@@ -229,6 +229,26 @@ def marker_context(data,hits):
     return {"windows":rows,"first_start":min(starts) if starts else None,
             "member_boundaries_verified":False}
 
+def marker_layout_hypotheses(data,hits):
+    # A fixed marker is not necessarily a record. Test only exact framing.
+    rows=[]
+    for h in hits:
+        p=h["start"]
+        if p<17:
+            continue
+        m=data[p-17:p]
+        matches=[]
+        for width in (1,2,3,4):
+            for endian in ("big","little"):
+                for offset in range(1,17-width+1):
+                    v=int.from_bytes(m[offset:offset+width],endian)
+                    if v==17 or v==17-offset-width:
+                        matches.append([offset,width,endian,v])
+        rows.append({"start":p,"zero_offsets":[i for i,b in enumerate(m) if b==0],
+                     "printable_count":sum(32<=b<=126 for b in m),
+                     "framing_matches":matches})
+    return rows
+
 def scan(data):
     hits=[]
     p=0
@@ -260,7 +280,7 @@ def scan(data):
             h["following_span"]={"length":len(span),"sha256":hashlib.sha256(span).hexdigest(),"tail_sha256":hashlib.sha256(span[-256:]).hexdigest()}
     return {"archive_size":len(data),"archive_sha256":hashlib.sha256(data).hexdigest(),
             "candidate_count":len(hits),"unique_prefix_count":len({h["sha256"] for h in hits}),
-            "candidates":hits,"candidate_groups":compare_candidate_groups(hits),"preceding_marker_audit":preceding_marker_audit(data,hits),"marker_context":marker_context(data,hits),"anchor_audit":scan_skipped_anchors(data,hits),"aligned_group_evidence":aligned_group_evidence(data,hits),"full_group_divergence":full_group_divergence(data,hits),"boundary_tail_evidence":boundary_tail_evidence(data,hits),"preceding_boundary_evidence":preceding_boundary_evidence(data,hits),"member_boundaries_verified":False,"executable_conversion":False}
+            "candidates":hits,"candidate_groups":compare_candidate_groups(hits),"preceding_marker_audit":preceding_marker_audit(data,hits),"marker_context":marker_context(data,hits),"marker_layout_hypotheses":marker_layout_hypotheses(data,hits),"anchor_audit":scan_skipped_anchors(data,hits),"aligned_group_evidence":aligned_group_evidence(data,hits),"full_group_divergence":full_group_divergence(data,hits),"boundary_tail_evidence":boundary_tail_evidence(data,hits),"preceding_boundary_evidence":preceding_boundary_evidence(data,hits),"member_boundaries_verified":False,"executable_conversion":False}
 
 def attr(k,v):
     b=len(k).to_bytes(4,"big")+k+len(v).to_bytes(4,"big")+v
@@ -333,6 +353,10 @@ class Tests(unittest.TestCase):
         r=marker_context(data,[{"start":18},{"start":36}])
         self.assertEqual(r["windows"][0]["unique"],1)
         self.assertEqual(r["windows"][1]["unique"],2)
+    def test_marker_layout(self):
+        m=bytes([193,15])+b"a"*15
+        r=marker_layout_hypotheses(m,[{"start":17}])[0]
+        self.assertIn([1,1,"big",15],r["framing_matches"])
     def test_noise(self):
         self.assertEqual(scan(b"abc")["candidate_count"],0)
 
