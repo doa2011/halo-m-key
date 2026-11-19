@@ -1,0 +1,47 @@
+"""Check independence of heuristic slices, without exposing library bytes."""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import unittest
+
+def audit(samples):
+    groups = {}
+    for name, data, start, stop in samples:
+        if not 0 <= start < stop < len(data):
+            raise ValueError("invalid prefix bounds")
+        digest = hashlib.sha256(data[start:stop]).hexdigest()
+        suffix = hashlib.sha256(data[stop:stop+4096]).hexdigest()
+        groups.setdefault(digest, []).append({
+            "name": name, "prefix_length": stop-start,
+            "following_4k_sha256": suffix, "next_tag": hex(data[stop]),
+            "slice_length": len(data)})
+    return {"sample_count":sum(map(len,groups.values())),
+            "unique_prefix_count":len(groups),"groups":groups,
+            "module_boundaries_verified":False,
+            "executable_conversion":False}
+
+class TestAudit(unittest.TestCase):
+    def test_duplicate(self):
+        r=audit([("a",b"xxABCz",2,5),("b",b"ABCz",0,3)])
+        self.assertEqual(r["unique_prefix_count"],1)
+        self.assertFalse(r["module_boundaries_verified"])
+    def test_distinct(self):
+        self.assertEqual(audit([("a",b"ABCz",0,3),("b",b"ABDz",0,3)])["unique_prefix_count"],2)
+    def test_bounds(self):
+        with self.assertRaises(ValueError):
+            audit([("a",b"ABC",0,3)])
+
+if __name__=="__main__":
+    p=argparse.ArgumentParser()
+    p.add_argument("directory",type=Path)
+    p.add_argument("--out",type=Path,required=True)
+    a=p.parse_args()
+    tests=unittest.TextTestRunner().run(unittest.defaultTestLoader.loadTestsFromTestCase(TestAudit))
+    if not tests.wasSuccessful():
+        raise SystemExit(1)
+    rows=json.loads((a.directory/"record-prefix.json").read_text())
+    report=audit([(n,(a.directory/n).read_bytes(),v["start"],v["stop"]) for n,v in rows.items()])
+    a.out.write_text(json.dumps(report,indent=2))
+    print("Heuristic samples:",report["sample_count"],"independent prefixes:",report["unique_prefix_count"])
+    assert report["sample_count"]>0
