@@ -139,6 +139,29 @@ jobs:
           print("BLOCKER: upstream emitter produces prototype placeholders, not executable TI code")
           assert any(x.get("conversion_mode") for x in report), "No sample REL emitted"
           PY
+      - name: Quantify IAR library conversion limitations
+        run: |
+          mkdir -p conversion-audit
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("conversion-audit/module-audit.json")
+          rows=json.loads(p.read_text())
+          summary={
+            "module_count":len(rows),
+            "parsed_modules":sum("error" not in r for r in rows),
+            "parse_errors":[{"module":r.get("module"),"error":r.get("error")} for r in rows if "error" in r],
+            "prototype_only":True,
+            "executable_machine_code_recovered":False,
+            "firmware_link_allowed":False,
+            "reason":"iar2sdcc rel_emitter emits symbol stubs (ret/.ds) and metadata; it does not translate IAR machine-code instructions or relocation records into executable SDCC code."
+          }
+          p=Path("conversion-audit/conversion-readiness.json")
+          p.write_text(json.dumps(summary,indent=2)+"\\n")
+          print(json.dumps(summary,indent=2))
+          assert summary["parsed_modules"] > 0, "No IAR modules parsed"
+          assert summary["firmware_link_allowed"] is False
+          PY
       - name: Extract complete Halo PM3 project inventory
         if: always()
         run: |
