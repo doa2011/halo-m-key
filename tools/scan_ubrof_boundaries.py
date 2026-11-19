@@ -154,6 +154,24 @@ def aligned_group_evidence(data,hits):
                     "invariant_bytes_in_runs":sum(b-a for a,b in runs)})
     return out
 
+def full_group_divergence(data,hits):
+    groups={}
+    for i,h in enumerate(hits):
+        end=hits[i+1]["start"] if i+1<len(hits) else len(data)
+        groups.setdefault(h["sha256"],[]).append(data[h["end"]:end])
+    rows=[]
+    for digest,spans in groups.items():
+        if len(spans)<2:
+            continue
+        limit=min(map(len,spans))
+        base=spans[0]
+        first=next((i for i in range(limit) if any(s[i]!=base[i] for s in spans[1:])),limit)
+        rows.append({"prefix_sha256":digest,"samples":len(spans),
+                     "shortest_span":limit,"common_prefix_bytes":first,
+                     "divergence_observed":first<limit,
+                     "remaining_lengths":[len(s)-first for s in spans]})
+    return rows
+
 def scan(data):
     hits=[]
     p=0
@@ -185,7 +203,7 @@ def scan(data):
             h["following_span"]={"length":len(span),"sha256":hashlib.sha256(span).hexdigest(),"tail_sha256":hashlib.sha256(span[-256:]).hexdigest()}
     return {"archive_size":len(data),"archive_sha256":hashlib.sha256(data).hexdigest(),
             "candidate_count":len(hits),"unique_prefix_count":len({h["sha256"] for h in hits}),
-            "candidates":hits,"candidate_groups":compare_candidate_groups(hits),"anchor_audit":scan_skipped_anchors(data,hits),"aligned_group_evidence":aligned_group_evidence(data,hits),"preceding_boundary_evidence":preceding_boundary_evidence(data,hits),"member_boundaries_verified":False,"executable_conversion":False}
+            "candidates":hits,"candidate_groups":compare_candidate_groups(hits),"anchor_audit":scan_skipped_anchors(data,hits),"aligned_group_evidence":aligned_group_evidence(data,hits),"full_group_divergence":full_group_divergence(data,hits),"preceding_boundary_evidence":preceding_boundary_evidence(data,hits),"member_boundaries_verified":False,"executable_conversion":False}
 
 def attr(k,v):
     b=len(k).to_bytes(4,"big")+k+len(v).to_bytes(4,"big")+v
@@ -234,6 +252,12 @@ class Tests(unittest.TestCase):
         hits=[{"sha256":"a","end":0},{"sha256":"a","end":17}]
         r=aligned_group_evidence(data,hits)[0]
         self.assertEqual(r["invariant_runs"],[[0,8],[9,17]])
+    def test_full_group_divergence(self):
+        data=b"abcX"+b"abcY"
+        hits=[{"sha256":"a","start":0,"end":0},{"sha256":"a","start":4,"end":4}]
+        row=full_group_divergence(data,hits)[0]
+        self.assertEqual(row["common_prefix_bytes"],3)
+        self.assertTrue(row["divergence_observed"])
     def test_noise(self):
         self.assertEqual(scan(b"abc")["candidate_count"],0)
 
