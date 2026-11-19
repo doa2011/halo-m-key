@@ -8,6 +8,26 @@ from pathlib import Path
 import unittest
 from decode_ubrof_prefix import decode
 
+def short_record_evidence(data, start, limit):
+    # Aggregate only hashes and offsets; seek invariant short prefixes and
+    # independently parseable known record chains after C1.
+    end=min(start+256,limit)
+    window=data[start:end]
+    anchors=[]
+    for offset in range(1,len(window)):
+        if window[offset]!=0xc9:
+            continue
+        try:
+            d=decode(window[offset:])
+        except (ValueError,UnicodeError):
+            continue
+        if d["start"]==0 and d["counts"].get("0xc9",0)>=1:
+            anchors.append(offset)
+    return {"window_length":len(window),
+            "prefix_hashes":{str(n):hashlib.sha256(window[:n]).hexdigest()
+                             for n in (2,4,6,8,16,32,64,128,256) if n<=len(window)},
+            "validated_attribute_anchors":anchors}
+
 def c1_local_evidence(data,start,limit):
     rows=[]
     for width in (1,2,3,4):
@@ -71,6 +91,7 @@ def scan(data):
             limit = hits[i+1]["start"] if i+1<len(hits) else len(data)
             h["following_hypotheses"] = examine_following(data,h["end"],limit)
             h["c1_local_evidence"] = c1_local_evidence(data,h["end"],limit)
+            h["short_record_evidence"] = short_record_evidence(data,h["end"],limit)
     return {"archive_size":len(data),"archive_sha256":hashlib.sha256(data).hexdigest(),
             "candidate_count":len(hits),"unique_prefix_count":len({h["sha256"] for h in hits}),
             "candidates":hits,"member_boundaries_verified":False,"executable_conversion":False}
@@ -98,6 +119,11 @@ class Tests(unittest.TestCase):
         row=next(x for x in rows if x["width"]==2 and x["endian"]=="big" and not x["inclusive"])
         self.assertEqual(row["candidate_length"],5)
         self.assertEqual(row["next_tag"],"0xc2")
+    def test_short_record(self):
+        data=b"\xc1"+b"x"*7+attr(b"a",b"b")
+        r=short_record_evidence(data,0,len(data))
+        self.assertIn(8,r["validated_attribute_anchors"])
+        self.assertEqual(r["prefix_hashes"]["8"],hashlib.sha256(data[:8]).hexdigest())
     def test_noise(self):
         self.assertEqual(scan(b"abc")["candidate_count"],0)
 
