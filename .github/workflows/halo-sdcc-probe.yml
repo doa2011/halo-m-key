@@ -170,6 +170,9 @@ jobs:
           python3 tools/audit_iar_binary_layout.py \
             "sdk-public/Z-Stack 3.0.2/Projects/zstack/Libraries/TI2530DB/bin/EndDevice-Pro.lib" \
             --out conversion-audit/binary-layout --limit 8
+      - name: Decode verified UBROF record prefix
+        run: |
+          python3 tools/decode_ubrof_prefix.py conversion-audit/binary-layout --out conversion-audit/binary-layout/record-prefix.json
       - name: Upload raw IAR binary layout evidence (not firmware)
         if: always()
         uses: actions/upload-artifact@v4
