@@ -98,6 +98,29 @@ def parse_r51_prefix(data):
     }
 
 
+def audit_path_candidate(data, pos):
+    """Observed 52 00 D6 prefix followed by opaque bytes and counted paths.
+    This is a partial structure, not a verified complete record boundary.
+    Never return path text (may contain private build paths).
+    """
+    if take(data, pos, 3, "path candidate tag") != b"\x52\x00\xd6":
+        raise ValueError("unexpected path candidate tag")
+    count = take(data, pos + 5, 1, "path count")[0]
+    if not count:
+        raise ValueError("empty path candidate")
+    cursor = pos + 6
+    for _ in range(count):
+        size = take(data, cursor, 1, "path length")[0]
+        path = take(data, cursor + 1, size, "path")
+        if not path or not all(32 <= b < 127 for b in path):
+            raise ValueError("invalid path text")
+        if len(path) < 3 or path[1:3] != b":\\":
+            raise ValueError("unexpected path form")
+        cursor += 1 + size
+    return {"count": count, "end": cursor, "next_byte": data[cursor] if cursor < len(data) else None,
+            "complete_record_verified": False}
+
+
 def attr(key, value):
     payload = len(key).to_bytes(4, "big") + key + len(value).to_bytes(4, "big") + value
     return b"\xc9" + len(payload).to_bytes(4, "big") + payload
@@ -123,6 +146,15 @@ class Tests(unittest.TestCase):
                          ["__calling_convention", "__code_model"])
         self.assertEqual(result["next_tag"], "0x52")
         self.assertFalse(result["complete_ubrof_parse"])
+
+    def test_counted_paths(self):
+        paths = [b"C:\\sample", b"D:\\other"]
+        data = b"\x52\x00\xd6\x00\x00\x02" + b"".join(bytes([len(p)]) + p for p in paths)
+        result = audit_path_candidate(data + b"\x35", 0)
+        self.assertEqual((result["count"], result["end"], result["next_byte"]), (2, len(data), 0x35))
+        self.assertFalse(result["complete_record_verified"])
+        with self.assertRaises(ValueError):
+            audit_path_candidate(data[:-1], 0)
 
     def test_rejects_wrong_prefix(self):
         with self.assertRaisesRegex(ValueError, "unrecognized R51 prefix"):
@@ -154,6 +186,9 @@ def main():
     if args.input is None:
         ap.error("input is required unless --self-test is used")
     report = parse_r51_prefix(args.input.read_bytes())
+    pos = report["attribute_chain_end"]
+    if report["next_tag"] == "0x52" and args.input.read_bytes()[pos:pos+3] == b"\x52\x00\xd6":
+        report["path_candidate"] = audit_path_candidate(args.input.read_bytes(), pos)
     output = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
     if args.out:
         args.out.write_text(output, encoding="utf-8")
