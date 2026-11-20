@@ -156,6 +156,33 @@ class Tests(unittest.TestCase):
         with self.assertRaises(ValueError):
             audit_path_candidate(data[:-1], 0)
 
+    def test_path_candidate_rejects_truncation_and_invalid_count(self):
+        header = b"\\x52\\x00\\xd6\\x00\\x00\\x01"
+        with self.assertRaisesRegex(ValueError, "truncated path length"):
+            audit_path_candidate(header, 0)
+        with self.assertRaisesRegex(ValueError, "truncated path"):
+            audit_path_candidate(header + b"\\x08C:\\\\a", 0)
+        with self.assertRaisesRegex(ValueError, "empty path candidate"):
+            audit_path_candidate(header[:-1] + b"\\x00", 0)
+
+    def test_path_candidate_rejects_bad_tag_and_path(self):
+        good = b"\\x52\\x00\\xd6\\x00\\x00\\x01"
+        with self.assertRaisesRegex(ValueError, "unexpected path candidate tag"):
+            audit_path_candidate(b"\\x53" + good[1:], 0)
+        with self.assertRaisesRegex(ValueError, "unexpected path form"):
+            audit_path_candidate(good + b"\\x04test", 0)
+        with self.assertRaisesRegex(ValueError, "invalid path text"):
+            audit_path_candidate(good + b"\\x04C:\\\\x00", 0)
+
+    def test_path_candidate_never_returns_private_path(self):
+        private_path = b"C:\\\\private\\\\internal-sdk"
+        data = b"\\x52\\x00\\xd6\\x00\\x00\\x01" + bytes([len(private_path)]) + private_path
+        result = audit_path_candidate(data + b"\\xc1", 0)
+        self.assertEqual(result["next_byte"], 0xc1)
+        self.assertFalse(result["complete_record_verified"])
+        self.assertNotIn("private", json.dumps(result).lower())
+        self.assertNotIn("internal-sdk", json.dumps(result).lower())
+
     def test_rejects_wrong_prefix(self):
         with self.assertRaisesRegex(ValueError, "unrecognized R51 prefix"):
             parse_r51_prefix(b"noise" + sample())
