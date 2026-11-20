@@ -1,0 +1,75 @@
+name: Halo M-Key IAR CC2530 HEX Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  iar-build:
+    # Requires a self-hosted Windows runner with licensed IAR 8051 and TI Z-Stack 3.0.2.
+    runs-on: [self-hosted, Windows, X64, iar8051, zstack302]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify build host environment
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          if (-not $env:ZSTACK_HOME) { throw "Set ZSTACK_HOME on the self-hosted runner to the TI Z-Stack 3.0.2 installation root." }
+          if (-not $env:IARBUILD_EXE -or -not (Test-Path $env:IARBUILD_EXE)) { throw "Set IARBUILD_EXE to the licensed IarBuild.exe path." }
+          $components = Join-Path $env:ZSTACK_HOME "Components"
+          $homeAutomation = Join-Path $env:ZSTACK_HOME "Projects\zstack\HomeAutomation"
+          if (-not (Test-Path $components)) { throw "ZSTACK_HOME does not contain Components: $components" }
+          if (-not (Test-Path (Join-Path $env:ZSTACK_HOME "Tools\CC2530DB"))) { throw "ZSTACK_HOME does not contain Tools\CC2530DB." }
+          New-Item -ItemType Directory -Force -Path $homeAutomation | Out-Null
+          $projectRoot = Join-Path $homeAutomation "freepad"
+          if (Test-Path $projectRoot) {
+            $origin = git -C $projectRoot remote get-url origin 2>$null
+            if ($LASTEXITCODE -ne 0 -or $origin -notmatch "diyruz/freepad") {
+              throw "Refusing to delete existing non-FreePad directory: $projectRoot"
+            }
+            Remove-Item -Recurse -Force $projectRoot
+          }
+          git clone --depth 1 https://github.com/diyruz/freepad.git $projectRoot
+          git -C $projectRoot -c url.https://github.com/.insteadOf=git@github.com: submodule update --init --recursive
+          python firmware/halo/prepare_halo_freepad.py $projectRoot
+          python tools/check_halo_port.py $projectRoot
+          & $env:IARBUILD_EXE (Join-Path $projectRoot "CC2530DB\GenericApp.ewp") -build HALO_M_KEY_PM3 -log all
+          if ($LASTEXITCODE -ne 0) { throw "IAR build failed with exit code $LASTEXITCODE" }
+          $hexDir = Join-Path $projectRoot "CC2530DB\HALO_M_KEY_PM3\Exe"
+          $hex = Get-ChildItem $hexDir -Filter *.hex -File | Select-Object -First 1
+          if (-not $hex -or $hex.Length -le 0) { throw "IAR reported success but no non-empty HEX was found in $hexDir" }
+          $map = Get-ChildItem (Join-Path $projectRoot "CC2530DB\HALO_M_KEY_PM3") -Filter *.map -Recurse -File | Select-Object -First 1
+          if (-not $map) { throw "No MAP file found; refusing to publish HEX without link map." }
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item $hex.FullName dist\halo-m-key-cc2530-pm3.hex
+          Copy-Item $map.FullName dist\halo-m-key-cc2530-pm3.map
+          Copy-Item (Join-Path $projectRoot "LICENSE") dist\FREEPAD-LICENSE
+          Get-FileHash dist\halo-m-key-cc2530-pm3.hex -Algorithm SHA256 | Format-List | Out-File dist\SHA256.txt
+      - name: Upload real IAR build outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: halo-m-key-cc2530-hex
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish versioned GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: halo-m-key-build-${{ github.run_number }}
+          name: Halo M-Key CC2530 build ${{ github.run_number }}
+          body: |
+            IAR-built Halo M-Key CC2530 PM3 firmware.
+            Source commit: ${{ github.sha }}
+            This release is produced only after IAR reports success and non-empty HEX and MAP files are verified.
+          files: |
+            dist/halo-m-key-cc2530-pm3.hex
+            dist/halo-m-key-cc2530-pm3.map
+            dist/SHA256.txt
+            dist/FREEPAD-LICENSE
+          fail_on_unmatched_files: true
