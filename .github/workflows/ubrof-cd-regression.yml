@@ -11,6 +11,7 @@ on:
       - 'tools/audit_prefix_boundaries.py'
       - 'tools/audit_shared_prefixes.py'
       - 'tools/audit_c1_postwindow.py'
+      - 'tools/audit_c1_shared_extension.py'
       - '.github/workflows/ubrof-cd-regression.yml'
   pull_request:
     paths:
@@ -20,6 +21,7 @@ on:
       - 'tools/audit_prefix_boundaries.py'
       - 'tools/audit_shared_prefixes.py'
       - 'tools/audit_c1_postwindow.py'
+      - 'tools/audit_c1_shared_extension.py'
       - '.github/workflows/ubrof-cd-regression.yml'
   workflow_dispatch:
 
@@ -46,3 +48,5 @@ jobs:
         run: python3 tools/audit_shared_prefixes.py --self-test
       - name: Run C1 post-window independent synthetic tests
         run: python3 tools/audit_c1_postwindow.py --self-test
+      - name: Run C1 long shared-extension and 11-byte-tail synthetic tests
+        run: python3 tools/audit_c1_shared_extension.py --self-test
