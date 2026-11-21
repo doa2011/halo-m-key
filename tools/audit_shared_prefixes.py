@@ -53,7 +53,7 @@ class Tests(unittest.TestCase):
         with zipfile.ZipFile(out,"w") as z:
             info={}
             for name, prefix in entries:
-                data=b"HEADER"+prefix+b"\\xc1"+b"TAIL"
+                data=b"HEADER"+prefix+bytes([0xC1])+b"TAIL"
                 z.writestr(name,data)
                 info[name]={"start":6,"stop":6+len(prefix),
                             "records":[{"offset":6,"end":6+len(prefix)}]}
