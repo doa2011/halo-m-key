@@ -7,27 +7,30 @@ import unittest
 
 def audit(samples):
     groups = {}
+    aligned = []
     for name, data, start, stop in samples:
         if not 0 <= start < stop < len(data):
             raise ValueError("invalid prefix bounds")
+        aligned.append(data[stop:stop+4096])
         digest = hashlib.sha256(data[start:stop]).hexdigest()
         suffix = hashlib.sha256(data[stop:stop+4096]).hexdigest()
         groups.setdefault(digest, []).append({
-            "name": name, "prefix_length": stop-start,
+            "sample_index": len(aligned)-1, "name": name, "prefix_length": stop-start,
             "following_4k_sha256": suffix, "next_tag": hex(data[stop]),
             "slice_length": len(data)})
     # 对齐解析终点，比较其后有限字节；重复前缀并不等于独立模块。
-    aligned = {name: data[stop:stop+4096] for name, data, start, stop in samples}
     comparisons = []
     for members in groups.values():
         for i, left in enumerate(members):
             for right in members[i+1:]:
-                a, b = aligned[left["name"]], aligned[right["name"]]
+                a, b = aligned[left["sample_index"]], aligned[right["sample_index"]]
                 limit = min(len(a), len(b))
                 common = next((j for j in range(limit) if a[j] != b[j]), limit)
                 comparisons.append({"left": left["name"], "right": right["name"],
                                     "compared_bytes": limit, "common_following_bytes": common,
-                                    "comparison_limit": 4096})
+                                    "comparison_limit": 4096,
+                                    "fully_compared": len(a) == len(b) and len(a) < 4096,
+                                    "first_difference_verified": common < limit})
     return {"aligned_following_comparisons": comparisons,
             "sample_count":sum(map(len,groups.values())),
             "unique_prefix_count":len(groups),"groups":groups,
@@ -49,6 +52,18 @@ class TestAudit(unittest.TestCase):
         r=audit([("a",b"ABCx",0,3),("b",b"ABCxyz",0,3)])
         self.assertEqual(r["aligned_following_comparisons"][0]["common_following_bytes"],1)
         self.assertEqual(r["aligned_following_comparisons"][0]["compared_bytes"],1)
+    def test_repeated_names_are_independent_samples(self):
+        r=audit([("same",b"ABCx",0,3),("same",b"ABCy",0,3)])
+        c=r["aligned_following_comparisons"][0]
+        self.assertEqual(c["common_following_bytes"],0)
+        self.assertTrue(c["first_difference_verified"])
+        self.assertEqual(r["sample_count"],2)
+    def test_equal_prefix_of_suffix_is_not_full_equality(self):
+        r=audit([("a",b"ABCx",0,3),("b",b"ABCxy",0,3)])
+        c=r["aligned_following_comparisons"][0]
+        self.assertEqual(c["common_following_bytes"],1)
+        self.assertFalse(c["fully_compared"])
+        self.assertFalse(c["first_difference_verified"])
     def test_distinct(self):
         self.assertEqual(audit([("a",b"ABCz",0,3),("b",b"ABDz",0,3)])["unique_prefix_count"],2)
     def test_bounds(self):
