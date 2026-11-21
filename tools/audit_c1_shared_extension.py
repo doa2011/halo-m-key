@@ -84,11 +84,36 @@ class Tests(unittest.TestCase):
         self.assertFalse(item["identical_full_slices"])
 
     def test_absolute_offset_is_not_used(self):
-        with zipfile.ZipFile(self.make([
-            ("a", b"ABC", b"same" + b"x"),
-            ("b", b"ABC", b"same" + b"y")])) as archive:
+        # 两个样本的绝对起点不同，但相对切片应得到相同公共长度。
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w") as archive:
+            archive.writestr("a", b"X" + b"ABC" + b"\xc1" + b"same" + b"x")
+            archive.writestr("b", b"LONGHDR" + b"ABC" + b"\xc1" + b"same" + b"y")
+            archive.writestr("record-prefix.json", json.dumps({
+                "a": {"start": 1, "stop": 4},
+                "b": {"start": 7, "stop": 10},
+            }))
+        buf.seek(0)
+        with zipfile.ZipFile(buf) as archive:
             report = audit(archive)
         self.assertEqual(report["comparisons"][0]["shared_bytes"], 8)
+        self.assertEqual(report["comparisons"][0]["shorter_remaining_bytes"], 1)
+
+    def test_longer_module_continues_after_shorter_tail_diverges(self):
+        # 较短模块尾部 11 字节不同，较长模块仍有后续数据。
+        common = b"Q" * 128
+        with zipfile.ZipFile(self.make([
+            ("short", b"PRE", common + b"a" * 11),
+            ("long", b"PRE", common + b"b" * 11 + b"MORE_DATA"),
+        ])) as archive:
+            report = audit(archive)
+        pair = report["comparisons"][0]
+        self.assertEqual(pair["shared_bytes"], 3 + 1 + len(common))
+        self.assertEqual(pair["shorter_remaining_bytes"], 11)
+        self.assertFalse(pair["identical_full_slices"])
+        self.assertFalse(report["c1_length_proven"])
+        self.assertFalse(report["record_boundary_proven"])
+        self.assertFalse(report["relocation_proven"])
 
     def test_no_pairs_for_distinct_prefixes(self):
         with zipfile.ZipFile(self.make([
