@@ -1,0 +1,28 @@
+name: UBROF CD candidate regression
+
+on:
+  push:
+    branches:
+      - feature/sdcc-build
+    paths:
+      - 'tools/audit_cd_candidate_safe.py'
+      - '.github/workflows/ubrof-cd-regression.yml'
+  pull_request:
+    paths:
+      - 'tools/audit_cd_candidate_safe.py'
+      - '.github/workflows/ubrof-cd-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cd-candidate-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python version
+        run: python3 --version
+      - name: Run seven synthetic regression tests without proprietary data
+        run: python3 tools/audit_cd_candidate_safe.py --self-test
