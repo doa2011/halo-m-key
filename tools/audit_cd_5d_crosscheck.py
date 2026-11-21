@@ -29,8 +29,7 @@ def audit(data):
         "cd_duplicate_names": duplicate_names,
         "pattern_36_opcode_5d": by_opcode,
         "pattern_hits_inside_cd_candidates": sum(
-            start <= offset < stop
-            for offset, _ in patterns
+            1 for offset, _ in patterns
             if any(start <= offset < stop for start, stop, _, _ in names)),
         "cd_record_boundaries_verified": False,
         "symbol_index_mapping_verified": False,
