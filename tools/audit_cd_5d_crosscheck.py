@@ -67,7 +67,7 @@ class Tests(unittest.TestCase):
 
     def test_nonascii_name_cannot_establish_cd_boundary(self):
         # A raw 36-12-5D pattern alone does not prove a valid CD candidate.
-        report = audit(self.cd(b"\\x36\\x12\\x5d"))
+        report = audit(self.cd(bytes([0x36, 0x12, 0x5d])))
         self.assertEqual(report["pattern_36_opcode_5d"]["12"], 1)
         self.assertEqual(report["cd_candidates"], 0)
         self.assertEqual(report["pattern_hits_inside_cd_candidates"], 0)
