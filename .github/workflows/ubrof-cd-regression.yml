@@ -6,10 +6,12 @@ on:
       - feature/sdcc-build
     paths:
       - 'tools/audit_cd_candidate_safe.py'
+      - 'tools/audit_cd_5d_crosscheck.py'
       - '.github/workflows/ubrof-cd-regression.yml'
   pull_request:
     paths:
       - 'tools/audit_cd_candidate_safe.py'
+      - 'tools/audit_cd_5d_crosscheck.py'
       - '.github/workflows/ubrof-cd-regression.yml'
   workflow_dispatch:
 
@@ -24,5 +26,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Python version
         run: python3 --version
-      - name: Run seven synthetic regression tests without proprietary data
+      - name: Run CD candidate regression tests
         run: python3 tools/audit_cd_candidate_safe.py --self-test
+      - name: Run CD/5D cross-check regression tests
+        run: python3 tools/audit_cd_5d_crosscheck.py --self-test
