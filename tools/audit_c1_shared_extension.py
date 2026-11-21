@@ -105,7 +105,7 @@ class Tests(unittest.TestCase):
     def test_invalid_interval_rejected(self):
         with zipfile.ZipFile(self.make([("a", b"ABC", b"same")])) as archive:
             raw = archive.read("a")
-        for start in (-1, True, 4, None):
+        for start in (-1, True, 6, None):
             buf = BytesIO()
             with zipfile.ZipFile(buf, "w") as archive:
                 archive.writestr("a", raw)
