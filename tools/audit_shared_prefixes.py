@@ -20,14 +20,14 @@ def audit(z):
         start, stop = info["start"], info["stop"]
         if not (0 <= start < stop <= len(raw)):
             raise ValueError("invalid prefix interval")
-        if raw[stop] != 0xc1 if stop < len(raw) else True:
+        if stop >= len(raw) or raw[stop] != 0xC1:
             raise ValueError("claimed C1 stop is inconsistent")
         records = info["records"]
         if not records or records[0]["offset"] != start:
             raise ValueError("record list does not start at prefix")
         for idx, record in enumerate(records):
-            if record["end"] <= record["offset"]:
-                raise ValueError("nonpositive candidate interval")
+            if not (start <= record["offset"] < record["end"] <= stop):
+                raise ValueError("candidate interval outside prefix")
             if idx and record["offset"] != records[idx-1]["end"]:
                 raise ValueError("noncontiguous candidate intervals")
         if records[-1]["end"] != stop:
@@ -82,6 +82,36 @@ class Tests(unittest.TestCase):
             buf.seek(0)
             with zipfile.ZipFile(buf) as bad:
                 with self.assertRaises(ValueError):audit(bad)
+    def test_candidate_interval_before_prefix_rejected(self):
+        with zipfile.ZipFile(self.make([("a.bin", b"ABC")])) as z:
+            raw = z.read("a.bin")
+            meta = json.loads(z.read("record-prefix.json"))
+        meta["a.bin"]["records"] = [{"offset": 5, "end": 9}]
+        from io import BytesIO
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("a.bin", raw)
+            z.writestr("record-prefix.json", json.dumps(meta))
+        buf.seek(0)
+        with zipfile.ZipFile(buf) as z:
+            with self.assertRaises(ValueError):
+                audit(z)
+
+    def test_candidate_interval_after_stop_rejected(self):
+        with zipfile.ZipFile(self.make([("a.bin", b"ABC")])) as z:
+            raw = z.read("a.bin")
+            meta = json.loads(z.read("record-prefix.json"))
+        meta["a.bin"]["records"] = [{"offset": 6, "end": 10}]
+        from io import BytesIO
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("a.bin", raw)
+            z.writestr("record-prefix.json", json.dumps(meta))
+        buf.seek(0)
+        with zipfile.ZipFile(buf) as z:
+            with self.assertRaises(ValueError):
+                audit(z)
+
     def test_report_has_no_names_or_bytes(self):
         with zipfile.ZipFile(self.make([("PRIVATE.bin",b"PRIVATE_CONTENT")])) as z:
             s=json.dumps(audit(z))
