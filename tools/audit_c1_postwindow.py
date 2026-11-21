@@ -42,7 +42,7 @@ class Tests(unittest.TestCase):
         metadata = {}
         with zipfile.ZipFile(buffer, "w") as archive:
             for name, prefix, tail in rows:
-                archive.writestr(name, prefix + b"\\xc1" + tail)
+                archive.writestr(name, prefix + bytes([0xC1]) + tail)
                 metadata[name] = {"start": 0, "stop": len(prefix)}
             archive.writestr("record-prefix.json", json.dumps(metadata))
         buffer.seek(0)
