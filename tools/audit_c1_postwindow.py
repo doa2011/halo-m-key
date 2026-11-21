@@ -39,7 +39,8 @@ def audit(archive, window=128):
     }
 
 class Tests(unittest.TestCase):
-    def make(self, rows):
+    def make(self, rows, overrides=None):
+        """一次性写入唯一元数据条目，避免 ZIP 同名条目影响反证有效性。"""
         from io import BytesIO
         buffer = BytesIO()
         metadata = {}
@@ -47,6 +48,9 @@ class Tests(unittest.TestCase):
             for name, prefix, tail in rows:
                 archive.writestr(name, prefix + bytes([0xC1]) + tail)
                 metadata[name] = {"start": 0, "stop": len(prefix)}
+            if overrides:
+                for name, changes in overrides.items():
+                    metadata[name].update(changes)
             archive.writestr("record-prefix.json", json.dumps(metadata))
         buffer.seek(0)
         return buffer
@@ -67,13 +71,20 @@ class Tests(unittest.TestCase):
     def test_invalid_prefix_starts_rejected(self):
         for invalid_start in (-1, 2, True, 1.0, None):
             with self.subTest(start=invalid_start):
-                buffer = self.make([("a", b"A", b"1234")])
-                with zipfile.ZipFile(buffer, "a") as z:
-                    # 在测试样本中覆盖元数据；不包含任何真实 SDK 字节
-                    z.writestr("record-prefix.json", json.dumps(
-                        {"a": {"start": invalid_start, "stop": 1}}))
-                buffer.seek(0)
+                buffer = self.make([("a", b"A", b"1234")],
+                                   {"a": {"start": invalid_start}})
                 with zipfile.ZipFile(buffer) as z:
+                    self.assertEqual(z.namelist().count("record-prefix.json"), 1)
+                    with self.assertRaises(ValueError):
+                        audit(z, 4)
+
+    def test_invalid_stop_types_rejected(self):
+        for invalid_stop in (True, -1, 0, 7, 1.0, None):
+            with self.subTest(stop=invalid_stop):
+                buffer = self.make([("a", b"A", b"1234")],
+                                   {"a": {"stop": invalid_stop}})
+                with zipfile.ZipFile(buffer) as z:
+                    self.assertEqual(z.namelist().count("record-prefix.json"), 1)
                     with self.assertRaises(ValueError):
                         audit(z, 4)
 
