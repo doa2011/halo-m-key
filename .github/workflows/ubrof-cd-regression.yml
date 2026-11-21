@@ -9,6 +9,7 @@ on:
       - 'tools/audit_cd_5d_crosscheck.py'
       - 'tools/compare_cd_5d_samples.py'
       - 'tools/audit_prefix_boundaries.py'
+      - 'tools/audit_shared_prefixes.py'
       - '.github/workflows/ubrof-cd-regression.yml'
   pull_request:
     paths:
@@ -16,6 +17,7 @@ on:
       - 'tools/audit_cd_5d_crosscheck.py'
       - 'tools/compare_cd_5d_samples.py'
       - 'tools/audit_prefix_boundaries.py'
+      - 'tools/audit_shared_prefixes.py'
       - '.github/workflows/ubrof-cd-regression.yml'
   workflow_dispatch:
 
@@ -38,3 +40,5 @@ jobs:
         run: python3 tools/compare_cd_5d_samples.py --self-test
       - name: Run repeated-prefix boundary falsification tests
         run: python3 tools/audit_prefix_boundaries.py --self-test
+      - name: Run shared-prefix synthetic regression tests
+        run: python3 tools/audit_shared_prefixes.py --self-test
