@@ -8,21 +8,24 @@ import zipfile
 from collections import defaultdict
 
 def audit(archive, window=128):
-    if window <= 0:
-        raise ValueError("window must be positive")
+    if type(window) is not int or window <= 0:
+        raise ValueError("window must be a positive integer")
     metadata = json.loads(archive.read("record-prefix.json"))
     groups = defaultdict(int)
     for name, entry in metadata.items():
         raw = archive.read(name)
         stop = entry["stop"]
-        if not isinstance(stop, int) or not (0 <= stop < len(raw)):
+        start = entry["start"]
+        if type(stop) is not int or not (0 <= stop < len(raw)):
             raise ValueError("invalid stop")
+        if type(start) is not int or not (0 <= start < stop):
+            raise ValueError("invalid prefix start")
         if raw[stop] != 0xC1:
             raise ValueError("stop is not C1")
         tail = raw[stop + 1:stop + 1 + window]
         if len(tail) != window:
             raise ValueError("insufficient post-C1 bytes")
-        prefix = raw[entry["start"]:stop]
+        prefix = raw[start:stop]
         key = (hashlib.sha256(prefix).hexdigest(), hashlib.sha256(tail).hexdigest())
         groups[key] += 1
     return {
@@ -60,6 +63,26 @@ class Tests(unittest.TestCase):
         with zipfile.ZipFile(self.make([("a", b"A", b"12")])) as z:
             with self.assertRaises(ValueError):
                 audit(z, 4)
+
+    def test_invalid_prefix_starts_rejected(self):
+        for invalid_start in (-1, 2, True, 1.0, None):
+            with self.subTest(start=invalid_start):
+                buffer = self.make([("a", b"A", b"1234")])
+                with zipfile.ZipFile(buffer, "a") as z:
+                    # 在测试样本中覆盖元数据；不包含任何真实 SDK 字节
+                    z.writestr("record-prefix.json", json.dumps(
+                        {"a": {"start": invalid_start, "stop": 1}}))
+                buffer.seek(0)
+                with zipfile.ZipFile(buffer) as z:
+                    with self.assertRaises(ValueError):
+                        audit(z, 4)
+
+    def test_invalid_window_types_rejected(self):
+        with zipfile.ZipFile(self.make([("a", b"A", b"1234")])) as z:
+            for invalid_window in (True, 0, -1, 1.0):
+                with self.subTest(window=invalid_window):
+                    with self.assertRaises(ValueError):
+                        audit(z, invalid_window)
 
     def test_no_semantic_claim_or_private_bytes(self):
         with zipfile.ZipFile(self.make([("secret.bin", b"PRIVATE", b"ABCD")])) as z:
