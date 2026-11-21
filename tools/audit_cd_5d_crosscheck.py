@@ -60,7 +60,7 @@ class Tests(unittest.TestCase):
         self.assertFalse(report["symbol_index_mapping_verified"])
 
     def test_name_data_can_contain_pattern(self):
-        report = audit(self.cd(b"\x36\x12\x5d"))
+        report = audit(self.cd().replace(b"\x00" * 4, b"\x36\x12\x5d\x00", 1))
         self.assertEqual(report["pattern_36_opcode_5d"]["12"], 1)
         self.assertEqual(report["pattern_hits_inside_cd_candidates"], 1)
         self.assertFalse(report["relocation_verified"])
