@@ -59,10 +59,18 @@ class Tests(unittest.TestCase):
         self.assertEqual(report["cd_duplicate_names"], 1)
         self.assertFalse(report["symbol_index_mapping_verified"])
 
-    def test_name_data_can_contain_pattern(self):
+    def test_opaque_cd_field_can_contain_pattern(self):
         report = audit(self.cd().replace(b"\x00" * 4, b"\x36\x12\x5d\x00", 1))
         self.assertEqual(report["pattern_36_opcode_5d"]["12"], 1)
         self.assertEqual(report["pattern_hits_inside_cd_candidates"], 1)
+        self.assertFalse(report["relocation_verified"])
+
+    def test_nonascii_name_cannot_establish_cd_boundary(self):
+        # A raw 36-12-5D pattern alone does not prove a valid CD candidate.
+        report = audit(self.cd(b"\\x36\\x12\\x5d"))
+        self.assertEqual(report["pattern_36_opcode_5d"]["12"], 1)
+        self.assertEqual(report["cd_candidates"], 0)
+        self.assertEqual(report["pattern_hits_inside_cd_candidates"], 0)
         self.assertFalse(report["relocation_verified"])
 
     def test_no_proprietary_bytes_in_report(self):
