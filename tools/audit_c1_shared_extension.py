@@ -1,0 +1,140 @@
+#!/usr/bin/env python3
+"""Independent synthetic falsification of long shared bytes after heuristic C1.
+Only aggregate lengths and SHA-256 are emitted; no proprietary bytes or module names.
+Matching bytes are NOT proof of UBROF record boundaries, C1 semantics or relocations.
+"""
+import argparse
+import hashlib
+import json
+import unittest
+import zipfile
+from collections import defaultdict
+from io import BytesIO
+
+
+def common_length(a, b):
+    count = 0
+    for x, y in zip(a, b):
+        if x != y:
+            break
+        count += 1
+    return count
+
+
+def audit(archive):
+    metadata = json.loads(archive.read("record-prefix.json"))
+    if not isinstance(metadata, dict) or not metadata:
+        raise ValueError("missing module metadata")
+    groups = defaultdict(list)
+    for name, entry in metadata.items():
+        start, stop = entry["start"], entry["stop"]
+        raw = archive.read(name)
+        if (type(start) is not int or type(stop) is not int
+                or not (0 <= start < stop < len(raw)) or raw[stop] != 0xC1):
+            raise ValueError("invalid heuristic interval")
+        prefix = raw[start:stop]
+        groups[(len(prefix), hashlib.sha256(prefix).hexdigest())].append(raw[start:])
+    comparisons = []
+    for modules in groups.values():
+        for i, a in enumerate(modules):
+            for b in modules[i + 1:]:
+                shared = common_length(a, b)
+                short = a if len(a) <= len(b) else b
+                comparisons.append({
+                    "shared_bytes": shared,
+                    "shorter_remaining_bytes": len(short) - shared,
+                    "shorter_tail_sha256": hashlib.sha256(short[shared:]).hexdigest(),
+                    "identical_full_slices": a == b,
+                })
+    return {
+        "module_count": len(metadata),
+        "same_prefix_pair_count": len(comparisons),
+        "comparisons": sorted(comparisons, key=lambda x: (
+            x["shared_bytes"], x["shorter_remaining_bytes"],
+            x["shorter_tail_sha256"])),
+        "c1_length_proven": False,
+        "record_boundary_proven": False,
+        "relocation_proven": False,
+    }
+
+
+class Tests(unittest.TestCase):
+    @staticmethod
+    def make(rows):
+        buf = BytesIO()
+        metadata = {}
+        with zipfile.ZipFile(buf, "w") as archive:
+            for name, prefix, suffix in rows:
+                archive.writestr(name, b"HDR" + prefix + b"\xc1" + suffix)
+                metadata[name] = {"start": 3, "stop": 3 + len(prefix)}
+            archive.writestr("record-prefix.json", json.dumps(metadata))
+        buf.seek(0)
+        return buf
+
+    def test_shared_extension_with_eleven_byte_distinct_tail(self):
+        common = b"A" * 14529
+        rows = [("a", b"PRE", common + b"1" * 11),
+                ("b", b"PRE", common + b"2" * 11)]
+        with zipfile.ZipFile(self.make(rows)) as archive:
+            report = audit(archive)
+        item = report["comparisons"][0]
+        self.assertEqual(report["same_prefix_pair_count"], 1)
+        self.assertEqual(item["shared_bytes"], 3 + 1 + 14529)
+        self.assertEqual(item["shorter_remaining_bytes"], 11)
+        self.assertFalse(item["identical_full_slices"])
+
+    def test_absolute_offset_is_not_used(self):
+        with zipfile.ZipFile(self.make([
+            ("a", b"ABC", b"same" + b"x"),
+            ("b", b"ABC", b"same" + b"y")])) as archive:
+            report = audit(archive)
+        self.assertEqual(report["comparisons"][0]["shared_bytes"], 8)
+
+    def test_no_pairs_for_distinct_prefixes(self):
+        with zipfile.ZipFile(self.make([
+            ("a", b"ABC", b"same"), ("b", b"ABD", b"same")])) as archive:
+            self.assertEqual(audit(archive)["same_prefix_pair_count"], 0)
+
+    def test_identical_slices_are_not_evidence_of_records(self):
+        with zipfile.ZipFile(self.make([
+            ("a", b"ABC", b"same"), ("b", b"ABC", b"same")])) as archive:
+            report = audit(archive)
+        self.assertTrue(report["comparisons"][0]["identical_full_slices"])
+        self.assertFalse(report["record_boundary_proven"])
+
+    def test_invalid_interval_rejected(self):
+        with zipfile.ZipFile(self.make([("a", b"ABC", b"same")])) as archive:
+            raw = archive.read("a")
+        for start in (-1, True, 4, None):
+            buf = BytesIO()
+            with zipfile.ZipFile(buf, "w") as archive:
+                archive.writestr("a", raw)
+                archive.writestr("record-prefix.json", json.dumps({
+                    "a": {"start": start, "stop": 6}}))
+            buf.seek(0)
+            with zipfile.ZipFile(buf) as archive:
+                with self.subTest(start=start), self.assertRaises(ValueError):
+                    audit(archive)
+
+    def test_report_does_not_expose_names_or_raw_bytes(self):
+        with zipfile.ZipFile(self.make([
+            ("SECRET_NAME", b"PRIVATE", b"SECRET_PAYLOAD"),
+            ("OTHER_NAME", b"PRIVATE", b"SECRET_PAYLOAd")])) as archive:
+            report = json.dumps(audit(archive))
+        for secret in ("SECRET_NAME", "OTHER_NAME", "PRIVATE", "SECRET_PAYLOAD"):
+            self.assertNotIn(secret, report)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("artifact", nargs="?")
+    parser.add_argument("--self-test", action="store_true")
+    args = parser.parse_args()
+    if args.self_test:
+        result = unittest.TextTestRunner(verbosity=2).run(
+            unittest.defaultTestLoader.loadTestsFromTestCase(Tests))
+        raise SystemExit(0 if result.wasSuccessful() else 1)
+    if not args.artifact:
+        parser.error("artifact ZIP required")
+    with zipfile.ZipFile(args.artifact) as archive:
+        print(json.dumps(audit(archive), indent=2))
