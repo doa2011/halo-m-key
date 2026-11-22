@@ -47,6 +47,8 @@ def audit(archive):
             raise ValueError("invalid heuristic interval")
         prefix = raw[start:stop]
         groups[(len(prefix), hashlib.sha256(prefix).hexdigest())].append(raw[start:])
+    # 配对数随重复样本二次增长，不能当作独立格式证据数量。
+    repeated_group_count = sum(len(modules) > 1 for modules in groups.values())
     comparisons = []
     for modules in groups.values():
         for i, a in enumerate(modules):
@@ -62,6 +64,7 @@ def audit(archive):
     return {
         "module_count": len(metadata),
         "same_prefix_pair_count": len(comparisons),
+        "repeated_prefix_group_count": repeated_group_count,
         "comparisons": sorted(comparisons, key=lambda x: (
             x["shared_bytes"], x["shorter_remaining_bytes"],
             x["shorter_tail_sha256"])),
@@ -208,6 +211,26 @@ class Tests(unittest.TestCase):
         self.assertEqual(report["same_prefix_pair_count"], 1)
         self.assertEqual(report["comparisons"][0]["shared_bytes"], 4)
         self.assertFalse(report["record_boundary_proven"])
+
+    def test_three_repeated_prefixes_are_one_group_not_three_independent_proofs(self):
+        # 三个重复前缀产生三组两两比较，但仅属于一个前缀组。
+        with zipfile.ZipFile(self.make([
+            ("a", b"ABC", b"tail1"),
+            ("b", b"ABC", b"tail2"),
+            ("c", b"ABC", b"tail3"),
+        ])) as archive:
+            report = audit(archive)
+        self.assertEqual(report["same_prefix_pair_count"], 3)
+        self.assertEqual(report["repeated_prefix_group_count"], 1)
+        self.assertFalse(report["record_boundary_proven"])
+        self.assertFalse(report["c1_length_proven"])
+
+    def test_distinct_prefixes_have_zero_repeated_groups(self):
+        with zipfile.ZipFile(self.make([
+            ("a", b"ABC", b"tail"), ("b", b"ABD", b"tail"),
+        ])) as archive:
+            report = audit(archive)
+        self.assertEqual(report["repeated_prefix_group_count"], 0)
 
     def test_duplicate_zip_member_names_rejected(self):
         # 不依赖 Python zipfile 对同名条目的选择规则。
