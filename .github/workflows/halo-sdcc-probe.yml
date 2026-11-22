@@ -155,7 +155,7 @@ jobs:
           summary={
             "module_count":len(rows),
             "parsed_modules":sum("error" not in r for r in rows),
-            "parse_errors":[{"module":r.get("module"),"error":r.get("error")} for r in rows if "error" in r],
+            "parse_error_count":sum("error" in r for r in rows),
             "prototype_only":True,
             "executable_machine_code_recovered":False,
             "firmware_link_allowed":False,
@@ -201,13 +201,14 @@ jobs:
           Path("conversion-audit/pm3-project-inventory.json").write_text(json.dumps(payload,indent=2))
           print("Project file entries:",len(payload["files"]))
           PY
+      # 仅公开汇总计数；原始模块名、符号、项目清单、转换 REL 和测试 HEX 不上传。
       - name: Upload conversion metadata audit (not firmware)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: halo-conversion-audit-NOT-FIRMWARE
           path: |
-            conversion-audit/*.json
+            conversion-audit/conversion-readiness.json
           if-no-files-found: warn
       - name: Upload Halo source adaptation diagnostics
         uses: actions/upload-artifact@v4
@@ -219,11 +220,5 @@ jobs:
         if: always()
         with:
           name: sdcc-sdk-library-diagnostics-NOT-FIRMWARE
-          path: diagnostics/
+          path: diagnostics/SDK-INFO.txt
           if-no-files-found: warn
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: sdcc-abi-probe-NOT-HALO-FIRMWARE
-          path: probe/
-          if-no-files-found: error
