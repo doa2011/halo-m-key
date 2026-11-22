@@ -154,6 +154,37 @@ class Tests(unittest.TestCase):
                 with self.subTest(start=start), self.assertRaises(ValueError):
                     audit(archive)
 
+    def test_c1_stop_offset_must_point_to_real_byte(self):
+        # 偏移差一字节时，即使附近存在 C1，也不能视为合法候选位置。
+        raw = b"HDRABC" + bytes([0xC1]) + b"tail"
+        for stop in (5, 7, 8):
+            buf = BytesIO()
+            with zipfile.ZipFile(buf, "w") as archive:
+                archive.writestr("a", raw)
+                archive.writestr("record-prefix.json", json.dumps({
+                    "a": {"start": 3, "stop": stop}}))
+            buf.seek(0)
+            with zipfile.ZipFile(buf) as archive:
+                with self.subTest(stop=stop), self.assertRaisesRegex(
+                        ValueError, "invalid heuristic interval"):
+                    audit(archive)
+
+    def test_multiple_c1_bytes_do_not_prove_unique_record_boundary(self):
+        # 同一真实字节序列存在两个 C1；两种候选偏移均合法但无法推导语义。
+        raw = b"HDRABC" + bytes([0xC1]) + b"QQ" + bytes([0xC1]) + b"tail"
+        for stop in (6, 9):
+            buf = BytesIO()
+            with zipfile.ZipFile(buf, "w") as archive:
+                archive.writestr("a", raw)
+                archive.writestr("record-prefix.json", json.dumps({
+                    "a": {"start": 3, "stop": stop}}))
+            buf.seek(0)
+            with zipfile.ZipFile(buf) as archive:
+                report = audit(archive)
+            self.assertEqual(report["module_count"], 1)
+            self.assertFalse(report["record_boundary_proven"])
+            self.assertFalse(report["c1_length_proven"])
+
     def test_duplicate_zip_member_names_rejected(self):
         # 不依赖 Python zipfile 对同名条目的选择规则。
         import warnings
