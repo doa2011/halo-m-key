@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate conservative R51 prefix parser (synthetic tests only)
-        run: python3 tools/audit_iar_ubrof_prefix.py --self-test
+        run: |\n          python3 tools/audit_iar_ubrof_prefix.py --self-test\n          python3 tools/test_ubrof_c1_metamorphic.py
       - name: Fetch pinned research inputs
         run: |
           git clone --filter=blob:none --no-checkout https://github.com/ms-rtos/ti_cc2530_zstack.git sdk-public
