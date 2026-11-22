@@ -76,7 +76,9 @@ jobs:
           for lib in Router-Pro EndDevice-Pro; do
             test -s "$libs/$lib.lib"
             sha256sum "$libs/$lib.lib"
-            python3 sdcc-converter/tools/iar2sdcc/cli.py scan --json "$libs/$lib.lib" | tee "$RUNNER_TEMP/$lib-scan.json"
+            python3 sdcc-converter/tools/iar2sdcc/cli.py scan --json "$libs/$lib.lib" > "$RUNNER_TEMP/$lib-scan.json"
+            # 只验证 JSON 格式；完整扫描内容留在 Runner 临时目录，不输出到公开日志。
+            echo "Validated private scan JSON for $lib"
             python3 -m json.tool "$RUNNER_TEMP/$lib-scan.json" >/dev/null
           done
       - name: Collect SDK diagnostics
