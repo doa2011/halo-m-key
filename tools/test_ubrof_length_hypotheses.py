@@ -32,7 +32,13 @@ class LengthHypothesisTests(unittest.TestCase):
             with self.subTest(size=len(data)):
                 rows = c1_local_evidence(data, 0, len(data))
                 self.assertFalse(any(r["valid"] for r in rows if r["width"] == 4))
-                self.assertFalse(any(r["exact_end"] for r in examine_following(data, 0, len(data))))
+                candidates = examine_following(data, 0, len(data))
+                # c1 00 可被一字节零长度假设“精确覆盖”，但不是已验证记录。
+                # exact_end 是数值匹配，不应被当作结构真实性判据。
+                if len(data) == 2:
+                    self.assertTrue(any(r["exact_end"] and r["records"] == 1 for r in candidates))
+                else:
+                    self.assertFalse(any(r["exact_end"] for r in candidates))
 
     def test_c1_byte_in_payload_is_not_proof_of_new_record(self):
         data = bytes.fromhex("c1000301c102")
