@@ -40,6 +40,8 @@ def audit(archive):
         raise ValueError("missing module metadata")
     groups = defaultdict(list)
     candidate_c1_counts = []
+    before_stop_c1_counts = []
+    after_stop_c1_counts = []
     for name, entry in metadata.items():
         start, stop = entry["start"], entry["stop"]
         raw = archive.read(name)
@@ -48,6 +50,9 @@ def audit(archive):
             raise ValueError("invalid heuristic interval")
         # 统计切片中的全部 C1 字节，不能将某次命中视为唯一记录边界。
         candidate_c1_counts.append(raw[start:].count(bytes([0xC1])))
+        # 将候选点前后出现的 C1 分开统计，避免只报总数掩盖候选歧义。
+        before_stop_c1_counts.append(raw[start:stop].count(bytes([0xC1])))
+        after_stop_c1_counts.append(raw[stop + 1:].count(bytes([0xC1])))
         prefix = raw[start:stop]
         groups[(len(prefix), hashlib.sha256(prefix).hexdigest())].append(raw[start:])
     # 配对数随重复样本二次增长，不能当作独立格式证据数量。
@@ -71,6 +76,8 @@ def audit(archive):
         "repeated_prefix_group_count": repeated_group_count,
         "repeated_prefix_group_sizes": repeated_group_sizes,
         "candidate_c1_count_distribution": sorted(candidate_c1_counts),
+        "c1_before_candidate_distribution": sorted(before_stop_c1_counts),
+        "c1_after_candidate_distribution": sorted(after_stop_c1_counts),
         "comparisons": sorted(comparisons, key=lambda x: (
             x["shared_bytes"], x["shorter_remaining_bytes"],
             x["shorter_tail_sha256"])),
@@ -207,6 +214,24 @@ class Tests(unittest.TestCase):
             with zipfile.ZipFile(buf) as archive:
                 report = audit(archive)
             self.assertEqual(report["candidate_c1_count_distribution"], [2])
+            self.assertFalse(report["record_boundary_proven"])
+            self.assertFalse(report["c1_length_proven"])
+
+    def test_c1_before_and_after_candidate_are_distinguished(self):
+        # 相同样本选择两个不同 C1 作为 stop，前后计数应互换。
+        raw = b"HDRABC" + bytes([0xC1]) + b"QQ" + bytes([0xC1]) + b"tail"
+        for stop, before, after in ((6, 0, 1), (9, 1, 0)):
+            buf = BytesIO()
+            with zipfile.ZipFile(buf, "w") as archive:
+                archive.writestr("a", raw)
+                archive.writestr("record-prefix.json", json.dumps({
+                    "a": {"start": 3, "stop": stop}}))
+            buf.seek(0)
+            with zipfile.ZipFile(buf) as archive:
+                report = audit(archive)
+            self.assertEqual(report["candidate_c1_count_distribution"], [2])
+            self.assertEqual(report["c1_before_candidate_distribution"], [before])
+            self.assertEqual(report["c1_after_candidate_distribution"], [after])
             self.assertFalse(report["record_boundary_proven"])
             self.assertFalse(report["c1_length_proven"])
 
