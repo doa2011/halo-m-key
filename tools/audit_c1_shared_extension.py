@@ -161,8 +161,8 @@ class Tests(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
             with zipfile.ZipFile(buf, "w") as archive:
-                archive.writestr("a", b"HDRABC\\xc1tail")
-                archive.writestr("a", b"HDRABC\\xc1other")
+                archive.writestr("a", b"HDRABC\xc1tail")
+                archive.writestr("a", b"HDRABC\xc1other")
                 archive.writestr("record-prefix.json", json.dumps({
                     "a": {"start": 3, "stop": 6}}))
         buf.seek(0)
@@ -174,7 +174,7 @@ class Tests(unittest.TestCase):
         # ZIP 文件名唯一仍不足以保证 JSON 内的模块标识唯一。
         buf = BytesIO()
         with zipfile.ZipFile(buf, "w") as archive:
-            archive.writestr("a", b"HDRABC\\xc1tail")
+            archive.writestr("a", b"HDRABC\xc1tail")
             archive.writestr("record-prefix.json",
                              '{"a":{"start":3,"stop":6},"a":{"start":1,"stop":4}}')
         buf.seek(0)
@@ -185,13 +185,25 @@ class Tests(unittest.TestCase):
     def test_duplicate_nested_interval_field_rejected(self):
         buf = BytesIO()
         with zipfile.ZipFile(buf, "w") as archive:
-            archive.writestr("a", b"HDRABC\\xc1tail")
+            archive.writestr("a", b"HDRABC\xc1tail")
             archive.writestr("record-prefix.json",
                              '{"a":{"start":3,"start":1,"stop":6}}')
         buf.seek(0)
         with zipfile.ZipFile(buf) as archive:
             with self.assertRaisesRegex(ValueError, "duplicate JSON metadata key"):
                 audit(archive)
+
+    def test_valid_metadata_with_real_c1_byte_accepted(self):
+        # 正例：确保合法元数据确实走到真实 0xC1 边界检查，
+        # 避免反证测试只验证提前拒绝而未覆盖正常路径。
+        with zipfile.ZipFile(self.make([
+            ("a", b"ABC", b"tail1"), ("b", b"ABC", b"tail2")
+        ])) as archive:
+            report = audit(archive)
+        self.assertEqual(report["module_count"], 2)
+        self.assertEqual(report["same_prefix_pair_count"], 1)
+        self.assertEqual(report["comparisons"][0]["shared_bytes"], 3 + 1 + 4)
+        self.assertFalse(report["record_boundary_proven"])
 
     def test_report_does_not_expose_names_or_raw_bytes(self):
         with zipfile.ZipFile(self.make([
