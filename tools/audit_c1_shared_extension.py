@@ -26,7 +26,16 @@ def audit(archive):
     names = [item.filename for item in archive.infolist()]
     if len(names) != len(set(names)):
         raise ValueError("duplicate ZIP member names")
-    metadata = json.loads(archive.read("record-prefix.json"))
+    # JSON 默认会静默覆盖重复键，可能隐藏重复模块或偏移篡改。
+    def unique_object(pairs):
+        obj = {}
+        for key, value in pairs:
+            if key in obj:
+                raise ValueError("duplicate JSON metadata key")
+            obj[key] = value
+        return obj
+    metadata = json.loads(archive.read("record-prefix.json"),
+                          object_pairs_hook=unique_object)
     if not isinstance(metadata, dict) or not metadata:
         raise ValueError("missing module metadata")
     groups = defaultdict(list)
@@ -159,6 +168,29 @@ class Tests(unittest.TestCase):
         buf.seek(0)
         with zipfile.ZipFile(buf) as archive:
             with self.assertRaisesRegex(ValueError, "duplicate ZIP"):
+                audit(archive)
+
+    def test_duplicate_json_metadata_keys_rejected(self):
+        # ZIP 文件名唯一仍不足以保证 JSON 内的模块标识唯一。
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w") as archive:
+            archive.writestr("a", b"HDRABC\\xc1tail")
+            archive.writestr("record-prefix.json",
+                             '{"a":{"start":3,"stop":6},"a":{"start":1,"stop":4}}')
+        buf.seek(0)
+        with zipfile.ZipFile(buf) as archive:
+            with self.assertRaisesRegex(ValueError, "duplicate JSON metadata key"):
+                audit(archive)
+
+    def test_duplicate_nested_interval_field_rejected(self):
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w") as archive:
+            archive.writestr("a", b"HDRABC\\xc1tail")
+            archive.writestr("record-prefix.json",
+                             '{"a":{"start":3,"start":1,"stop":6}}')
+        buf.seek(0)
+        with zipfile.ZipFile(buf) as archive:
+            with self.assertRaisesRegex(ValueError, "duplicate JSON metadata key"):
                 audit(archive)
 
     def test_report_does_not_expose_names_or_raw_bytes(self):
