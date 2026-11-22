@@ -39,12 +39,15 @@ def audit(archive):
     if not isinstance(metadata, dict) or not metadata:
         raise ValueError("missing module metadata")
     groups = defaultdict(list)
+    candidate_c1_counts = []
     for name, entry in metadata.items():
         start, stop = entry["start"], entry["stop"]
         raw = archive.read(name)
         if (type(start) is not int or type(stop) is not int
                 or not (0 <= start < stop < len(raw)) or raw[stop] != 0xC1):
             raise ValueError("invalid heuristic interval")
+        # 统计切片中的全部 C1 字节，不能将某次命中视为唯一记录边界。
+        candidate_c1_counts.append(raw[start:].count(bytes([0xC1])))
         prefix = raw[start:stop]
         groups[(len(prefix), hashlib.sha256(prefix).hexdigest())].append(raw[start:])
     # 配对数随重复样本二次增长，不能当作独立格式证据数量。
@@ -67,6 +70,7 @@ def audit(archive):
         "same_prefix_pair_count": len(comparisons),
         "repeated_prefix_group_count": repeated_group_count,
         "repeated_prefix_group_sizes": repeated_group_sizes,
+        "candidate_c1_count_distribution": sorted(candidate_c1_counts),
         "comparisons": sorted(comparisons, key=lambda x: (
             x["shared_bytes"], x["shorter_remaining_bytes"],
             x["shorter_tail_sha256"])),
@@ -187,6 +191,22 @@ class Tests(unittest.TestCase):
             with zipfile.ZipFile(buf) as archive:
                 report = audit(archive)
             self.assertEqual(report["module_count"], 1)
+            self.assertFalse(report["record_boundary_proven"])
+            self.assertFalse(report["c1_length_proven"])
+
+    def test_multiple_c1_candidate_counts_are_only_ambiguity_statistics(self):
+        # 两个真实 C1，stop 指向任一个均不能证明记录边界。
+        raw = b"HDRABC" + bytes([0xC1]) + b"QQ" + bytes([0xC1]) + b"tail"
+        for stop in (6, 9):
+            buf = BytesIO()
+            with zipfile.ZipFile(buf, "w") as archive:
+                archive.writestr("a", raw)
+                archive.writestr("record-prefix.json", json.dumps({
+                    "a": {"start": 3, "stop": stop}}))
+            buf.seek(0)
+            with zipfile.ZipFile(buf) as archive:
+                report = audit(archive)
+            self.assertEqual(report["candidate_c1_count_distribution"], [2])
             self.assertFalse(report["record_boundary_proven"])
             self.assertFalse(report["c1_length_proven"])
 
