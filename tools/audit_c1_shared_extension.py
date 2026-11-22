@@ -22,6 +22,10 @@ def common_length(a, b):
 
 
 def audit(archive):
+    # 重复 ZIP 成员名会让元数据与字节读取的对应关系不明确，必须拒绝。
+    names = [item.filename for item in archive.infolist()]
+    if len(names) != len(set(names)):
+        raise ValueError("duplicate ZIP member names")
     metadata = json.loads(archive.read("record-prefix.json"))
     if not isinstance(metadata, dict) or not metadata:
         raise ValueError("missing module metadata")
@@ -140,6 +144,22 @@ class Tests(unittest.TestCase):
             with zipfile.ZipFile(buf) as archive:
                 with self.subTest(start=start), self.assertRaises(ValueError):
                     audit(archive)
+
+    def test_duplicate_zip_member_names_rejected(self):
+        # 不依赖 Python zipfile 对同名条目的选择规则。
+        import warnings
+        buf = BytesIO()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            with zipfile.ZipFile(buf, "w") as archive:
+                archive.writestr("a", b"HDRABC\\xc1tail")
+                archive.writestr("a", b"HDRABC\\xc1other")
+                archive.writestr("record-prefix.json", json.dumps({
+                    "a": {"start": 3, "stop": 6}}))
+        buf.seek(0)
+        with zipfile.ZipFile(buf) as archive:
+            with self.assertRaisesRegex(ValueError, "duplicate ZIP"):
+                audit(archive)
 
     def test_report_does_not_expose_names_or_raw_bytes(self):
         with zipfile.ZipFile(self.make([
