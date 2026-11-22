@@ -185,6 +185,30 @@ class Tests(unittest.TestCase):
             self.assertFalse(report["record_boundary_proven"])
             self.assertFalse(report["c1_length_proven"])
 
+    def test_c1_payload_marker_is_not_record_evidence(self):
+        # 人工负例：普通载荷恰好包含 C1；候选偏移检查通过，
+        # 但不得把字节碰撞推断为真实 UBROF 记录或可转换代码。
+        with zipfile.ZipFile(self.make([
+            ("a", b"ABC", b"payload" + bytes([0xC1]) + b"tail1"),
+            ("b", b"ABC", b"payload" + bytes([0xC1]) + b"tail2"),
+        ])) as archive:
+            report = audit(archive)
+        self.assertEqual(report["same_prefix_pair_count"], 1)
+        self.assertFalse(report["record_boundary_proven"])
+        self.assertFalse(report["c1_length_proven"])
+        self.assertFalse(report["relocation_proven"])
+
+    def test_unrelated_modules_with_same_c1_prefix_are_not_independent_proof(self):
+        # 仅共享前缀不等于两个独立记录；后续数据完全不同。
+        with zipfile.ZipFile(self.make([
+            ("a", b"ABC", b"first-data"),
+            ("b", b"ABC", b"second-data"),
+        ])) as archive:
+            report = audit(archive)
+        self.assertEqual(report["same_prefix_pair_count"], 1)
+        self.assertEqual(report["comparisons"][0]["shared_bytes"], 4)
+        self.assertFalse(report["record_boundary_proven"])
+
     def test_duplicate_zip_member_names_rejected(self):
         # 不依赖 Python zipfile 对同名条目的选择规则。
         import warnings
