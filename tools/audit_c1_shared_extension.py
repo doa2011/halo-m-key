@@ -49,6 +49,7 @@ def audit(archive):
         groups[(len(prefix), hashlib.sha256(prefix).hexdigest())].append(raw[start:])
     # 配对数随重复样本二次增长，不能当作独立格式证据数量。
     repeated_group_count = sum(len(modules) > 1 for modules in groups.values())
+    repeated_group_sizes = sorted((len(modules) for modules in groups.values() if len(modules) > 1), reverse=True)
     comparisons = []
     for modules in groups.values():
         for i, a in enumerate(modules):
@@ -65,6 +66,7 @@ def audit(archive):
         "module_count": len(metadata),
         "same_prefix_pair_count": len(comparisons),
         "repeated_prefix_group_count": repeated_group_count,
+        "repeated_prefix_group_sizes": repeated_group_sizes,
         "comparisons": sorted(comparisons, key=lambda x: (
             x["shared_bytes"], x["shorter_remaining_bytes"],
             x["shorter_tail_sha256"])),
@@ -222,6 +224,7 @@ class Tests(unittest.TestCase):
             report = audit(archive)
         self.assertEqual(report["same_prefix_pair_count"], 3)
         self.assertEqual(report["repeated_prefix_group_count"], 1)
+        self.assertEqual(report["repeated_prefix_group_sizes"], [3])
         self.assertFalse(report["record_boundary_proven"])
         self.assertFalse(report["c1_length_proven"])
 
@@ -231,6 +234,19 @@ class Tests(unittest.TestCase):
         ])) as archive:
             report = audit(archive)
         self.assertEqual(report["repeated_prefix_group_count"], 0)
+        self.assertEqual(report["repeated_prefix_group_sizes"], [])
+
+    def test_two_independent_repeated_groups_have_distinct_sizes(self):
+        # 分组规模而非配对数用于揭示重复样本相关性，避免虚增独立证据。
+        rows = [(f"a{i}", b"ABC", b"tail" + bytes([i])) for i in range(3)]
+        rows += [(f"b{i}", b"XYZ", b"tail" + bytes([i])) for i in range(2)]
+        with zipfile.ZipFile(self.make(rows)) as archive:
+            report = audit(archive)
+        self.assertEqual(report["module_count"], 5)
+        self.assertEqual(report["same_prefix_pair_count"], 4)
+        self.assertEqual(report["repeated_prefix_group_count"], 2)
+        self.assertEqual(report["repeated_prefix_group_sizes"], [3, 2])
+        self.assertFalse(report["record_boundary_proven"])
 
     def test_duplicate_zip_member_names_rejected(self):
         # 不依赖 Python zipfile 对同名条目的选择规则。
