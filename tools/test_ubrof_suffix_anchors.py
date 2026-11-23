@@ -63,7 +63,10 @@ class SuffixAnchorTests(unittest.TestCase):
 
     def test_valid_candidate_followed_by_truncated_signature(self):
         a = attr(b"a", b"b")
-        data = a + b"\\xc9\\x00\\x00\\x00\\xff"
+        truncated = bytes.fromhex("C9 00 00 00 FF")
+        self.assertEqual(truncated[:4], SIGNATURE)
+        data = a + truncated
+        self.assertEqual(data.find(SIGNATURE, len(a)), len(a))
         rows = strict_suffix_anchors(data)
         self.assertEqual([r["offset"] for r in rows], [0])
         self.assertEqual(rows[0]["end"], len(a))
