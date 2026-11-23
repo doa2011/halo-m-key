@@ -17,6 +17,7 @@ jobs:
           python3 tools/audit_iar_ubrof_prefix.py --self-test
           python3 tools/test_ubrof_c1_metamorphic.py
           python3 tools/test_ubrof_length_hypotheses.py
+          python3 tools/test_ubrof_suffix_anchors.py
           python3 tools/test_compare_ubrof_candidate_spans.py
           python3 tools/audit_ubrof_artifact.py --self-test
           python3 tools/export_ubrof_public_summary.py --self-test
@@ -89,28 +90,11 @@ jobs:
           from pathlib import Path
           sys.path.insert(0,"tools")
           from decode_ubrof_prefix import decode
-          def anchors(data,start):
-              rows=[]
-              for p in range(start,len(data)-4):
-                  if data[p:p+4]!=b"\xc9\x00\x00\x00":
-                      continue
-                  try:
-                      r=decode(data[p:])
-                  except (ValueError,UnicodeError):
-                      continue
-                  if r["start"]==0 and r["counts"].get("0xc9",0):
-                      rows.append({"offset":p,"end":p+r["stop"],"counts":r["counts"]})
-              return rows
-          def attr(k,v):
-              body=len(k).to_bytes(4,"big")+k+len(v).to_bytes(4,"big")+v
-              return b"\xc9"+len(body).to_bytes(4,"big")+body
-          sample=b"noise"+attr(b"a",b"b")
-          assert anchors(sample,0)[0]["offset"]==5
-          assert not anchors(sample,6)
-          assert not anchors(b"\xc9\x00\x00\x00\xff",0)
+          from test_ubrof_suffix_anchors import strict_suffix_anchors
+          # 独立测试已在前置步骤执行；真实对象只记录候选，不作边界确认。
           data=Path(sys.argv[1]).read_bytes()
           r=decode(data)
-          rows=anchors(data,r["stop"]+1)
+          rows=strict_suffix_anchors(data,r["stop"]+1)
           report={"stop":r["stop"],"size":len(data),"strict_suffix_anchors":rows,
                   "record_semantics_verified":False,"executable_conversion":False}
           Path("reports/ecc-suffix-anchors.json").write_text(json.dumps(report))
