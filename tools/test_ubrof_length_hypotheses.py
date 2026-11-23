@@ -51,5 +51,29 @@ class LengthHypothesisTests(unittest.TestCase):
         self.assertEqual(two_byte["tag_histogram"], {"0xc1": 1})
 
 
+    def test_repeated_c1_zero_payload_is_not_boundary_proof(self):
+        # 两段人工 C1 + 2字节零长度；重复标签与精确覆盖均可人为制造。
+        data = bytes.fromhex("c10000c10000")
+        rows = examine_following(data, 0, len(data))
+        match = next(r for r in rows if r["width"] == 2 and r["endian"] == "big"
+                     and not r["includes_header"])
+        self.assertEqual(match["records"], 2)
+        self.assertEqual(match["covered_bytes"], len(data))
+        self.assertTrue(match["exact_end"])
+        self.assertEqual(match["tag_histogram"], {"0xc1": 2})
+        self.assertNotIn("record_semantics_verified", match)
+
+    def test_boundary_shift_breaks_manufactured_exact_end(self):
+        # 仅改变候选上界，不改变数据；精确覆盖并不是成员边界证据。
+        data = bytes.fromhex("c10000c10000")
+        full = examine_following(data, 0, len(data))
+        shifted = examine_following(data, 0, len(data) - 1)
+        def select(rows):
+            return next(r for r in rows if r["width"] == 2
+                        and r["endian"] == "big" and not r["includes_header"])
+        self.assertTrue(select(full)["exact_end"])
+        self.assertFalse(select(shifted)["exact_end"])
+        self.assertEqual(select(shifted)["records"], 1)
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
