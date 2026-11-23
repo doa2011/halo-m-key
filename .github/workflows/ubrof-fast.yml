@@ -17,6 +17,7 @@ jobs:
           python3 tools/audit_iar_ubrof_prefix.py --self-test
           python3 tools/test_ubrof_c1_metamorphic.py
           python3 tools/test_ubrof_length_hypotheses.py
+          python3 tools/test_compare_ubrof_candidate_spans.py
       - name: Fetch pinned research inputs
         run: |
           git clone --filter=blob:none --no-checkout https://github.com/ms-rtos/ti_cc2530_zstack.git sdk-public
@@ -50,29 +51,10 @@ jobs:
           python3 - "$lib" "$router" <<'PY'
           import sys,json,hashlib
           from pathlib import Path
+          sys.path.insert(0,"tools")
           a,b=[json.loads(Path(p).read_text()) for p in ("reports/boundaries.json","reports/router-boundaries.json")]
           da,db=[Path(p).read_bytes() for p in sys.argv[1:]]
-          # 仅在真实字节不同时报告差异；比较窗口耗尽不是差异。
-          # 限制为下一候选起点之前的启发式区间，不将其当作已验证模块边界。
-          def compare(a_bytes, a_start, a_limit, b_bytes, b_start, b_limit, cap=65536):
-              assert 0 <= a_start <= a_limit <= len(a_bytes)
-              assert 0 <= b_start <= b_limit <= len(b_bytes)
-              n=min(a_limit-a_start,b_limit-b_start,cap)
-              first=next((i for i in range(n) if a_bytes[a_start+i]!=b_bytes[b_start+i]),None)
-              common=n if first is None else first
-              return {"compared_bytes":n,"common_bytes":common,
-                      "first_difference_offset":first,
-                      "divergence_observed":first is not None,
-                      "hit_comparison_cap":first is None and n==cap,
-                      "hit_candidate_span_end":first is None and
-                          (a_start+n==a_limit or b_start+n==b_limit),
-                      "equality_beyond_window_unknown":first is None and
-                          a_start+n<a_limit and b_start+n<b_limit}
-          # 独立合成反证：真实差异、截断上限、短区间结束及完全相等。
-          assert compare(b"abX",0,3,b"abY",0,3,2)["first_difference_offset"] is None
-          assert compare(b"abX",0,3,b"abY",0,3,3)["first_difference_offset"]==2
-          assert compare(b"abc",0,2,b"abc",0,3,10)["hit_candidate_span_end"]
-          assert not compare(b"abc",0,3,b"abc",0,3,10)["divergence_observed"]
+          from compare_ubrof_candidate_spans import compare_candidate_spans as compare
           rows=[]
           for x in a["candidates"]:
               for y in b["candidates"]:
