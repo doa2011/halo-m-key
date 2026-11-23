@@ -19,6 +19,7 @@ jobs:
           python3 tools/test_ubrof_length_hypotheses.py
           python3 tools/test_compare_ubrof_candidate_spans.py
           python3 tools/audit_ubrof_artifact.py --self-test
+          python3 tools/export_ubrof_public_summary.py --self-test
       - name: Fetch pinned research inputs
         run: |
           git clone --filter=blob:none --no-checkout https://github.com/ms-rtos/ti_cc2530_zstack.git sdk-public
@@ -118,8 +119,10 @@ jobs:
           PY
       - name: Audit public JSON reports before upload
         run: python3 tools/audit_ubrof_artifact.py --directory reports
+      - name: Export fixed-schema public summary only
+        run: python3 tools/export_ubrof_public_summary.py --directory reports --output public-reports/summary.json
       - uses: actions/upload-artifact@v4
         with:
           name: ubrof-fast-aggregate-NOT-FIRMWARE
-          path: reports/*.json
+          path: public-reports/summary.json
           if-no-files-found: error
