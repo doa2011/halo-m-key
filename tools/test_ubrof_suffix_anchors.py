@@ -68,9 +68,13 @@ class SuffixAnchorTests(unittest.TestCase):
         data = a + truncated
         self.assertEqual(data.find(SIGNATURE, len(a)), len(a))
         rows = strict_suffix_anchors(data)
-        self.assertEqual([r["offset"] for r in rows], [0])
-        self.assertEqual(rows[0]["end"], len(a))
-        self.assertFalse(any("member_boundary_verified" in r for r in rows))
+        # 保守前缀解析器遇到尾部非法 C9 会拒绝整个候选，不能假定前一个有效属性仍被接受。
+        self.assertEqual(rows, [])
+        # 独立解析原始有效属性，确认失败来自追加的截断尾部，而非测试样本本身。
+        standalone = strict_suffix_anchors(a)
+        self.assertEqual([r["offset"] for r in standalone], [0])
+        self.assertEqual(standalone[0]["end"], len(a))
+        self.assertFalse(any("member_boundary_verified" in r for r in standalone))
 
     def test_repeated_prefix_not_member_boundary(self):
         a = attr(b"a", b"b")
