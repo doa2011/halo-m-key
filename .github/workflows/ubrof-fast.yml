@@ -52,20 +52,43 @@ jobs:
           from pathlib import Path
           a,b=[json.loads(Path(p).read_text()) for p in ("reports/boundaries.json","reports/router-boundaries.json")]
           da,db=[Path(p).read_bytes() for p in sys.argv[1:]]
+          # 仅在真实字节不同时报告差异；比较窗口耗尽不是差异。
+          # 限制为下一候选起点之前的启发式区间，不将其当作已验证模块边界。
+          def compare(a_bytes, a_start, a_limit, b_bytes, b_start, b_limit, cap=65536):
+              assert 0 <= a_start <= a_limit <= len(a_bytes)
+              assert 0 <= b_start <= b_limit <= len(b_bytes)
+              n=min(a_limit-a_start,b_limit-b_start,cap)
+              first=next((i for i in range(n) if a_bytes[a_start+i]!=b_bytes[b_start+i]),None)
+              common=n if first is None else first
+              return {"compared_bytes":n,"common_bytes":common,
+                      "first_difference_offset":first,
+                      "divergence_observed":first is not None,
+                      "hit_comparison_cap":first is None and n==cap,
+                      "hit_candidate_span_end":first is None and
+                          (a_start+n==a_limit or b_start+n==b_limit),
+                      "equality_beyond_window_unknown":first is None and
+                          a_start+n<a_limit and b_start+n<b_limit}
+          # 独立合成反证：真实差异、截断上限、短区间结束及完全相等。
+          assert compare(b"abX",0,3,b"abY",0,3,2)["first_difference_offset"] is None
+          assert compare(b"abX",0,3,b"abY",0,3,3)["first_difference_offset"]==2
+          assert compare(b"abc",0,2,b"abc",0,3,10)["hit_candidate_span_end"]
+          assert not compare(b"abc",0,3,b"abc",0,3,10)["divergence_observed"]
           rows=[]
           for x in a["candidates"]:
               for y in b["candidates"]:
                   if x["sha256"]!=y["sha256"]:
                       continue
-                  u=da[x["end"]:x["end"]+65536]
-                  v=db[y["end"]:y["end"]+65536]
-                  n=min(len(u),len(v))
-                  first=next((i for i in range(n) if u[i]!=v[i]),n)
-                  rows.append({"enddevice_offset":x["end"],"router_offset":y["end"],"compared_bytes":n,"common_bytes":first})
+                  a_end=next((z["start"] for z in a["candidates"] if z["start"]>x["end"]),len(da))
+                  b_end=next((z["start"] for z in b["candidates"] if z["start"]>y["end"]),len(db))
+                  result=compare(da,x["end"],a_end,db,y["end"],b_end)
+                  rows.append({"enddevice_offset":x["end"],"router_offset":y["end"],
+                               **result,"candidate_boundaries_verified":False})
           assert rows
           print("Cross-library pair count:",len(rows))
-          print("Cross-library common following lengths:",sorted(set(r["common_bytes"] for r in rows)))
-          Path("reports/cross-library-following.json").write_text(json.dumps({"pairs":rows,"member_boundaries_verified":False,"executable_conversion":False}))
+          print("Cross-library comparison:",[(r["common_bytes"],r["divergence_observed"],
+                r["hit_comparison_cap"]) for r in rows])
+          Path("reports/cross-library-following.json").write_text(json.dumps(
+              {"pairs":rows,"member_boundaries_verified":False,"executable_conversion":False}))
           PY
           python3 tools/scan_ubrof_boundaries.py "${lib%/*}/ecc.r51" --out reports/standalone-ecc.json
           python3 - <<'PY'
