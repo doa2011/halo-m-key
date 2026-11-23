@@ -75,5 +75,27 @@ class LengthHypothesisTests(unittest.TestCase):
         self.assertFalse(select(shifted)["exact_end"])
         self.assertEqual(select(shifted)["records"], 1)
 
+    def test_zero_length_endian_ambiguity(self):
+        # 两种字节序在零长度字段上完全等价；精确覆盖无法区分字节序。
+        data = bytes.fromhex("c10000c10000")
+        rows = examine_following(data, 0, len(data))
+        selected = [r for r in rows if r["width"] == 2
+                    and not r["includes_header"] and r["exact_end"]]
+        self.assertEqual({r["endian"] for r in selected}, {"big", "little"})
+        self.assertTrue(all(r["records"] == 2 for r in selected))
+        self.assertTrue(all(r["tag_histogram"] == {"0xc1": 2} for r in selected))
+        self.assertTrue(all("record_semantics_verified" not in r for r in selected))
+
+    def test_nonzero_length_separates_endian_hypotheses(self):
+        # 单个非零长度字段即可打破上述退化等价，但仍不能证明真实格式。
+        data = bytes.fromhex("c1000101")
+        rows = examine_following(data, 0, len(data))
+        def candidate(endian):
+            return next(r for r in rows if r["width"] == 2
+                        and r["endian"] == endian and not r["includes_header"])
+        self.assertTrue(candidate("big")["exact_end"])
+        self.assertFalse(candidate("little")["exact_end"])
+        self.assertNotIn("record_semantics_verified", candidate("big"))
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
