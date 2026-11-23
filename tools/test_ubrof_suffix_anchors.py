@@ -51,6 +51,24 @@ class SuffixAnchorTests(unittest.TestCase):
         self.assertTrue(any(x["offset"] > 0 for x in rows))
         self.assertFalse(any("member_boundary_verified" in x for x in rows))
 
+    def test_start_at_signature_and_end_of_buffer(self):
+        a = attr(b"a", b"b")
+        data = b"prefix" + a
+        self.assertEqual([r["offset"] for r in strict_suffix_anchors(data, 6)], [6])
+        self.assertEqual(strict_suffix_anchors(data, len(data)), [])
+        with self.assertRaises(ValueError):
+            strict_suffix_anchors(data, len(data) + 1)
+        with self.assertRaises(ValueError):
+            strict_suffix_anchors(data, -1)
+
+    def test_valid_candidate_followed_by_truncated_signature(self):
+        a = attr(b"a", b"b")
+        data = a + b"\\xc9\\x00\\x00\\x00\\xff"
+        rows = strict_suffix_anchors(data)
+        self.assertEqual([r["offset"] for r in rows], [0])
+        self.assertEqual(rows[0]["end"], len(a))
+        self.assertFalse(any("member_boundary_verified" in r for r in rows))
+
     def test_repeated_prefix_not_member_boundary(self):
         a = attr(b"a", b"b")
         rows = strict_suffix_anchors(a + b"\xc1" + a)
