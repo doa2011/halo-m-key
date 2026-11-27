@@ -97,5 +97,19 @@ class LengthHypothesisTests(unittest.TestCase):
         self.assertFalse(candidate("little")["exact_end"])
         self.assertNotIn("record_semantics_verified", candidate("big"))
 
+
+    def test_nonzero_symmetric_length_preserves_endian_ambiguity(self):
+        # 纯合成样本：非零不等于非对称，不能据此选择字节序。
+        data = b"\xc1\x01\x01" + b"\x00" * 257
+        def candidates(limit):
+            return [r for r in examine_following(data, 0, limit)
+                    if r["width"] == 2 and not r["includes_header"]]
+        full = candidates(len(data))
+        self.assertEqual({r["endian"] for r in full}, {"big", "little"})
+        self.assertTrue(all(r["exact_end"] and r["records"] == 1 for r in full))
+        self.assertTrue(all(r["covered_bytes"] == len(data) for r in full))
+        self.assertTrue(all("record_semantics_verified" not in r for r in full))
+        self.assertTrue(all(not r["exact_end"] for r in candidates(len(data)-1)))
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
